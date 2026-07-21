@@ -56,6 +56,12 @@
   border-radius: 12px;
   box-sizing: border-box;
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas--panning {
+  cursor: grabbing;
 }
 
 .canvas-empty {
@@ -67,11 +73,20 @@
   font-size: 15px;
 }
 
+.canvas-content {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+}
+
 .canvas-lines {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;
   pointer-events: none;
 }
 
@@ -131,4 +146,20 @@
 .room-square__area {
   font-size: 0.85em;
   color: var(--text);
+}
+
+.room-square__resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--accent-border);
+  cursor: ew-resize;
+  touch-action: none;
+
+  &:hover {
+    background: var(--accent);
+  }
 }

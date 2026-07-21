@@ -2,10 +2,11 @@ const ACI_RED = 1
 const ACI_GREEN = 3
 
 function toMeters(square, scale) {
-  const realSize = Math.sqrt(Math.max(square.targetArea, 0))
-  const centerX = (square.x + square.size / 2) / scale
-  const centerY = -(square.y + square.size / 2) / scale
-  return { centerX, centerY, realSize }
+  const realWidth = square.width / scale
+  const realHeight = square.height / scale
+  const centerX = (square.x + square.width / 2) / scale
+  const centerY = -(square.y + square.height / 2) / scale
+  return { centerX, centerY, realWidth, realHeight }
 }
 
 function pointToMeters(point, scale) {
@@ -27,13 +28,14 @@ function textEntity(x, y, height, text, layer, color) {
 }
 
 function squareEntities(square, scale, color) {
-  const { centerX, centerY, realSize } = toMeters(square, scale)
-  const half = realSize / 2
+  const { centerX, centerY, realWidth, realHeight } = toMeters(square, scale)
+  const halfWidth = realWidth / 2
+  const halfHeight = realHeight / 2
   const corners = [
-    [centerX - half, centerY - half],
-    [centerX + half, centerY - half],
-    [centerX + half, centerY + half],
-    [centerX - half, centerY + half],
+    [centerX - halfWidth, centerY - halfHeight],
+    [centerX + halfWidth, centerY - halfHeight],
+    [centerX + halfWidth, centerY + halfHeight],
+    [centerX - halfWidth, centerY + halfHeight],
   ]
   const sides = corners.map((corner, index) => {
     const next = corners[(index + 1) % corners.length]
@@ -42,9 +44,9 @@ function squareEntities(square, scale, color) {
 
   const areaLabel = Number.isNaN(square.targetArea) ? '?' : square.targetArea
   const label = textEntity(
-    centerX - half,
+    centerX - halfWidth,
     centerY,
-    Math.max(0.15, Math.min(realSize / 4, 0.5)),
+    Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5)),
     `${square.roomName} (${areaLabel} m2)`,
     'ROOMS',
     color,
