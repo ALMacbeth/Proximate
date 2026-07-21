@@ -8,6 +8,10 @@ function toMeters(square, scale) {
   return { centerX, centerY, realSize }
 }
 
+function pointToMeters(point, scale) {
+  return { x: point.x / scale, y: -point.y / scale }
+}
+
 function lineEntity(x1, y1, x2, y2, layer, color) {
   const lines = ['0', 'LINE', '8', layer]
   if (color) lines.push('62', String(color))
@@ -50,10 +54,10 @@ function squareEntities(square, scale, color) {
 }
 
 function connectionEntity(connection, scale) {
-  const from = toMeters(connection.from, scale)
-  const to = toMeters(connection.to, scale)
+  const from = pointToMeters(connection.fromPoint, scale)
+  const to = pointToMeters(connection.toPoint, scale)
   const color = connection.violated ? ACI_RED : ACI_GREEN
-  return lineEntity(from.centerX, from.centerY, to.centerX, to.centerY, 'CONNECTIONS', color)
+  return lineEntity(from.x, from.y, to.x, to.y, 'CONNECTIONS', color)
 }
 
 export function buildDxf({ squares, connections, violatedIds, scale }) {
@@ -64,9 +68,11 @@ export function buildDxf({ squares, connections, violatedIds, scale }) {
     entities.push(...squareEntities(square, scale, color))
   })
 
-  connections.forEach((connection) => {
+    //don't plot distance lines (add a toggle for this option later)
+
+  /*connections.forEach((connection) => {
     entities.push(connectionEntity(connection, scale))
-  })
+  })*/
 
   return ['0', 'SECTION', '2', 'ENTITIES', ...entities, '0', 'ENDSEC', '0', 'EOF'].join('\n')
 }

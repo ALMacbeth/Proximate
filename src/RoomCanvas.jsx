@@ -30,6 +30,34 @@ function centerDistance(a, b) {
   return Math.hypot(ax - bx, ay - by)
 }
 
+function squareCorners(square) {
+  return [
+    { x: square.x, y: square.y },
+    { x: square.x + square.size, y: square.y },
+    { x: square.x, y: square.y + square.size },
+    { x: square.x + square.size, y: square.y + square.size },
+  ]
+}
+
+function nearestCornerPoints(a, b) {
+  const cornersA = squareCorners(a)
+  const cornersB = squareCorners(b)
+  let distance = Infinity
+  let from = cornersA[0]
+  let to = cornersB[0]
+  cornersA.forEach((cornerA) => {
+    cornersB.forEach((cornerB) => {
+      const cornerDistance = Math.hypot(cornerA.x - cornerB.x, cornerA.y - cornerB.y)
+      if (cornerDistance < distance) {
+        distance = cornerDistance
+        from = cornerA
+        to = cornerB
+      }
+    })
+  })
+  return { distance, from, to }
+}
+
 function computeConnections(squares) {
   const scale = computeScale(squares)
   const byName = new Map()
@@ -50,11 +78,15 @@ function computeConnections(squares) {
         centerDistance(square, candidate) < centerDistance(square, closest) ? candidate : closest,
       )
 
+      const { distance, from: fromPoint, to: toPoint } = nearestCornerPoints(square, nearest)
+
       connections.push({
         id: `${square.id}->${nearest.id}-${name}`,
         from: square,
         to: nearest,
-        violated: centerDistance(square, nearest) > maxDistance*scale,
+        fromPoint,
+        toPoint,
+        violated: distance > maxDistance * scale,
       })
     })
   })
@@ -143,10 +175,10 @@ function RoomCanvas({ rooms }) {
           {connections.map((connection) => (
             <line
               key={connection.id}
-              x1={connection.from.x + connection.from.size / 2}
-              y1={connection.from.y + connection.from.size / 2}
-              x2={connection.to.x + connection.to.size / 2}
-              y2={connection.to.y + connection.to.size / 2}
+              x1={connection.fromPoint.x}
+              y1={connection.fromPoint.y}
+              x2={connection.toPoint.x}
+              y2={connection.toPoint.y}
               className={`connection${connection.violated ? ' connection--violated' : ' connection--ok'}`}
             />
           ))}
