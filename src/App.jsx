@@ -127,10 +127,11 @@ function App() {
         <section id="center">
             <div>
                 <h1 style={{ fontSize: '2rem' }}>Room Schedule Import</h1>
-                <p>
-                    Drop an Excel file with <code>{ROOM_NAME_HEADER}</code>, <code>{TARGET_AREA_HEADER}</code> and{' '}
-                    <code>{ADJACENT_ROOMS_HEADER}</code> columns to import it.
-                </p>
+                {fileDropToggle && (
+                    <p>
+                        Drop an Excel file with <code>{ROOM_NAME_HEADER}</code>, <code>{TARGET_AREA_HEADER}</code> and{' '}
+                        <code>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br></br>List adjacent rooms in with the format "ROOM NAME : MAX DISTANCE"<br></br>For multiple adjacency rules, list in the same cell seperated by a ","
+                    </p>)}
             </div>
             {fileDropToggle && (
                 <div
