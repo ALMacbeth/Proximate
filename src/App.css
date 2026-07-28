@@ -1,11 +1,11 @@
 #center {
   display: flex;
   flex-direction: column;
-  gap: 25px;
+  gap: 15px;
   place-content: center;
   place-items: center;
   flex-grow: 1;
-  padding: 32px 20px;
+  padding: 20px 20px;
   box-sizing: border-box;
 
   @media (max-width: 1024px) {
@@ -17,7 +17,7 @@
 .dropzone {
   width: 100%;
   max-width: 480px;
-  padding: 48px 24px;
+  padding: 24px 12px;
   border: 2px dashed var(--border);
   border-radius: 12px;
   cursor: pointer;
@@ -51,7 +51,7 @@
 .canvas {
   position: relative;
   width: 100%;
-  min-height: 480px;
+  min-height: 500px;
   border: 1px solid var(--border);
   border-radius: 12px;
   box-sizing: border-box;

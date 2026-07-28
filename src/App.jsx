@@ -126,7 +126,7 @@ function App() {
     return (
         <section id="center">
             <div>
-                <h1>Room Schedule Import</h1>
+                <h1 style={{ fontSize: '2rem' }}>Room Schedule Import</h1>
                 <p>
                     Drop an Excel file with <code>{ROOM_NAME_HEADER}</code>, <code>{TARGET_AREA_HEADER}</code> and{' '}
                     <code>{ADJACENT_ROOMS_HEADER}</code> columns to import it.
