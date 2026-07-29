@@ -10,14 +10,26 @@ export function computeScale(rooms) {
 }
 
 // Builds the on-canvas box for each room: initial width/height are equal
-// (a square) sized so area on screen is proportional to targetArea, with
-// MIN_SIZE and the optional per-room minWidth as floors. `area` is recorded
-// here (not recomputed later) so resizing can preserve it exactly even after
-// the box becomes a non-square rectangle.
+// (a square) sized so area on screen is proportional to targetArea. `area`
+// is recorded here (not recomputed later) so resizing can preserve it
+// exactly even after the box becomes a non-square rectangle.
 export function computeRoomBoxes(rooms, scale) {
   return rooms.map((room) => {
-    const minWidthPx = Number.isFinite(room.minWidth) && room.minWidth > 0 ? room.minWidth * scale : 0
-    const size = Math.max(MIN_SIZE, minWidthPx, Math.sqrt(Math.max(room.targetArea, 0)) * scale)
+    const areaSize = Math.sqrt(Math.max(room.targetArea, 0)) * scale
+    const hasMinWidth = Number.isFinite(room.minWidth) && room.minWidth > 0
+    const minWidthPx = hasMinWidth ? room.minWidth * scale : 0
+
+    // MIN_SIZE is a purely cosmetic pixel floor for rooms with no explicit
+    // minWidth, so tiny/unconstrained rooms stay clickable regardless of
+    // scale. It must NOT apply once a real minWidth is set — otherwise, in a
+    // file mixing a very large room (which shrinks `scale`) with a small
+    // one, MIN_SIZE can silently outrank the user's actual minWidth in the
+    // Math.max below, rendering (and displaying) a value that has nothing
+    // to do with either the room's area or its configured minimum.
+    const size = hasMinWidth
+      ? Math.max(MIN_DIMENSION, minWidthPx, areaSize)
+      : Math.max(MIN_SIZE, areaSize)
+
     return {
       id: room.id,
       roomName: room.roomName,
