@@ -17,17 +17,42 @@ function computeScale(rooms) {
 
 function computeSizes(rooms, scale) {
   return rooms.map((room) => {
-    const size = Math.max(MIN_SIZE, Math.round(Math.sqrt(Math.max(room.targetArea, 0)) * scale))
+    const minWidthPx = Number.isFinite(room.minWidth) && room.minWidth > 0 ? room.minWidth * scale : 0
+    const size = Math.max(MIN_SIZE, minWidthPx, Math.sqrt(Math.max(room.targetArea, 0)) * scale)
     return {
       id: room.id,
       roomName: room.roomName,
       targetArea: room.targetArea,
       adjacentRooms: room.adjacentRooms || {},
+      minWidth: room.minWidth,
+      color: room.color,
       width: size,
       height: size,
       area: size * size,
     }
   })
+}
+
+function getContrastTextColor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.6 ? '#000000' : '#ffffff'
+}
+
+function clampWidthToArea(desiredWidth, area, minWidthPx) {
+  const lowerBound = Math.max(MIN_DIMENSION, minWidthPx)
+  const upperBound = Math.max(lowerBound, Math.min(area / MIN_DIMENSION, minWidthPx > 0 ? area / minWidthPx : Infinity))
+  const width = Math.min(upperBound, Math.max(lowerBound, desiredWidth))
+  const height = Math.max(minWidthPx, area / width)
+  return { width, height }
+}
+
+function formatDimensions(square, scale) {
+  const widthMeters = square.width / scale
+  const heightMeters = square.height / scale
+  return `${widthMeters.toFixed(2)} x ${heightMeters.toFixed(2)}`
 }
 
 function centerDistance(a, b) {
@@ -38,28 +63,28 @@ function centerDistance(a, b) {
   return Math.hypot(ax - bx, ay - by)
 }
 
-function squareCorners(square) {
+function squareSideMidpoints(square) {
   return [
-    { x: square.x, y: square.y },
-    { x: square.x + square.width, y: square.y },
-    { x: square.x, y: square.y + square.height },
-    { x: square.x + square.width, y: square.y + square.height },
+    { x: square.x + square.width / 2, y: square.y }, // top
+    { x: square.x + square.width, y: square.y + square.height / 2 }, // right
+    { x: square.x + square.width / 2, y: square.y + square.height }, // bottom
+    { x: square.x, y: square.y + square.height / 2 }, // left
   ]
 }
 
-function nearestCornerPoints(a, b) {
-  const cornersA = squareCorners(a)
-  const cornersB = squareCorners(b)
+function nearestSidePoints(a, b) {
+  const sidesA = squareSideMidpoints(a)
+  const sidesB = squareSideMidpoints(b)
   let distance = Infinity
-  let from = cornersA[0]
-  let to = cornersB[0]
-  cornersA.forEach((cornerA) => {
-    cornersB.forEach((cornerB) => {
-      const cornerDistance = Math.hypot(cornerA.x - cornerB.x, cornerA.y - cornerB.y)
-      if (cornerDistance < distance) {
-        distance = cornerDistance
-        from = cornerA
-        to = cornerB
+  let from = sidesA[0]
+  let to = sidesB[0]
+  sidesA.forEach((sideA) => {
+    sidesB.forEach((sideB) => {
+      const sideDistance = Math.hypot(sideA.x - sideB.x, sideA.y - sideB.y)
+      if (sideDistance < distance) {
+        distance = sideDistance
+        from = sideA
+        to = sideB
       }
     })
   })
@@ -85,7 +110,7 @@ function computeConnections(squares, scale) {
         centerDistance(square, candidate) < centerDistance(square, closest) ? candidate : closest,
       )
 
-      const { distance, from: fromPoint, to: toPoint } = nearestCornerPoints(square, nearest)
+      const { distance, from: fromPoint, to: toPoint } = nearestSidePoints(square, nearest)
 
       connections.push({
         id: `${square.id}->${nearest.id}-${name}`,
@@ -120,13 +145,16 @@ function packSquares(squares, containerWidth) {
 
 function RoomCanvas({ rooms }) {
   const containerRef = useRef(null)
-  const offsets = useRef({})
+  const dragState = useRef(null)
   const resizeState = useRef({})
   const panState = useRef(null)
   const [squares, setSquares] = useState([])
   const [scale, setScale] = useState(1)
   const [view, setView] = useState({ zoom: 1, pan: { x: 0, y: 0 } })
+  const [editingId, setEditingId] = useState(null)
+  const [editValue, setEditValue] = useState('')
   const [isPanning, setIsPanning] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
 
   useLayoutEffect(() => {
     if (rooms.length === 0) {
@@ -168,8 +196,17 @@ function RoomCanvas({ rooms }) {
     return () => container.removeEventListener('wheel', handleWheel)
   }, [])
 
+  const getLayoutPointerPosition = (event) => {
+    const containerRect = containerRef.current.getBoundingClientRect()
+    return {
+      x: (event.clientX - containerRect.left - view.pan.x) / view.zoom,
+      y: (event.clientY - containerRect.top - view.pan.y) / view.zoom,
+    }
+  }
+
   const handlePanPointerDown = (event) => {
     event.currentTarget.setPointerCapture(event.pointerId)
+    if (!event.shiftKey) setSelectedIds(new Set())
     panState.current = { startX: event.clientX, startY: event.clientY, startPan: view.pan }
     setIsPanning(true)
   }
@@ -193,36 +230,59 @@ function RoomCanvas({ rooms }) {
     setIsPanning(false)
   }
 
-  const handlePointerDown = (event, id) => {
+  const handlePointerDown = (event, square) => {
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const rect = event.currentTarget.getBoundingClientRect()
-    offsets.current[id] = {
-      offsetX: (event.clientX - rect.left) / view.zoom,
-      offsetY: (event.clientY - rect.top) / view.zoom,
+
+    if (event.shiftKey) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(square.id)) next.delete(square.id)
+        else next.add(square.id)
+        return next
+      })
+      return
+    }
+
+    const isGroupMember = selectedIds.has(square.id) && selectedIds.size > 1
+    const activeSelection = isGroupMember ? selectedIds : new Set([square.id])
+    if (!isGroupMember) setSelectedIds(activeSelection)
+
+    const pointerStart = getLayoutPointerPosition(event)
+    const startPositions = new Map()
+    squares.forEach((sq) => {
+      if (activeSelection.has(sq.id)) startPositions.set(sq.id, { x: sq.x, y: sq.y })
+    })
+
+    dragState.current = {
+      startPointerX: pointerStart.x,
+      startPointerY: pointerStart.y,
+      startPositions,
     }
   }
 
-  const handlePointerMove = (event, id) => {
+  const handlePointerMove = (event) => {
     event.stopPropagation()
-    const offset = offsets.current[id]
-    if (!offset || !containerRef.current) return
-    const containerRect = containerRef.current.getBoundingClientRect()
+    const state = dragState.current
+    if (!state || !containerRef.current) return
+
+    const pointerNow = getLayoutPointerPosition(event)
+    const deltaX = pointerNow.x - state.startPointerX
+    const deltaY = pointerNow.y - state.startPointerY
 
     setSquares((prev) =>
       prev.map((square) => {
-        if (square.id !== id) return square
-        const layoutX = (event.clientX - containerRect.left - view.pan.x) / view.zoom
-        const layoutY = (event.clientY - containerRect.top - view.pan.y) / view.zoom
-        return { ...square, x: layoutX - offset.offsetX, y: layoutY - offset.offsetY }
+        const start = state.startPositions.get(square.id)
+        if (!start) return square
+        return { ...square, x: start.x + deltaX, y: start.y + deltaY }
       }),
     )
   }
 
-  const handlePointerUp = (event, id) => {
+  const handlePointerUp = (event) => {
     event.stopPropagation()
     event.currentTarget.releasePointerCapture(event.pointerId)
-    delete offsets.current[id]
+    dragState.current = null
   }
 
   const handleResizePointerDown = (event, id) => {
@@ -230,7 +290,7 @@ function RoomCanvas({ rooms }) {
     event.currentTarget.setPointerCapture(event.pointerId)
     const square = squares.find((sq) => sq.id === id)
     if (!square) return
-    resizeState.current[id] = { startX: event.clientX, startWidth: square.width, area: square.area }
+    resizeState.current[id] = { startX: event.clientX, startWidth: square.width, area: square.area, minWidth: square.minWidth }
   }
 
   const handleResizePointerMove = (event, id) => {
@@ -238,17 +298,12 @@ function RoomCanvas({ rooms }) {
     const state = resizeState.current[id]
     if (!state) return
 
-    const maxWidth = state.area / MIN_DIMENSION
-    const width = Math.min(
-      maxWidth,
-      Math.max(MIN_DIMENSION, state.startWidth + (event.clientX - state.startX) / view.zoom),
-    )
-    const height = state.area / width
+    const minWidthPx = Number.isFinite(state.minWidth) && state.minWidth > 0 ? state.minWidth * scale : 0
+    const desiredWidth = state.startWidth + (event.clientX - state.startX) / view.zoom
+    const { width, height } = clampWidthToArea(desiredWidth, state.area, minWidthPx)
 
     setSquares((prev) =>
-      prev.map((square) =>
-        square.id === id ? { ...square, width: Math.round(width), height: Math.round(height) } : square,
-      ),
+      prev.map((square) => (square.id === id ? { ...square, width, height } : square)),
     )
   }
 
@@ -256,6 +311,27 @@ function RoomCanvas({ rooms }) {
     event.stopPropagation()
     event.currentTarget.releasePointerCapture(event.pointerId)
     delete resizeState.current[id]
+  }
+
+  const handleSquareDoubleClick = (event, square) => {
+    event.stopPropagation()
+    if (editingId === square.id) return
+    setEditingId(square.id)
+    setEditValue((square.width / scale).toFixed(2))
+  }
+
+  const commitWidthEdit = (id) => {
+    setSquares((prev) =>
+      prev.map((square) => {
+        if (square.id !== id) return square
+        const widthMeters = parseFloat(editValue)
+        if (!Number.isFinite(widthMeters) || widthMeters <= 0) return square
+        const minWidthPx = Number.isFinite(square.minWidth) && square.minWidth > 0 ? square.minWidth * scale : 0
+        const { width, height } = clampWidthToArea(widthMeters * scale, square.area, minWidthPx)
+        return { ...square, width, height }
+      }),
+    )
+    setEditingId(null)
   }
 
   const connections = computeConnections(squares, scale)
@@ -297,19 +373,18 @@ function RoomCanvas({ rooms }) {
           {squares.map((square) => (
             <div
               key={square.id}
-              className={`room-square${violatedIds.has(square.id) ? ' room-square--violated' : ''}`}
+              className={`room-square${violatedIds.has(square.id) ? ' room-square--violated' : ''}${selectedIds.has(square.id) ? ' room-square--selected' : ''}`}
               style={{
                 width: square.width,
                 height: square.height,
-                fontSize: Math.max(11, Math.min(square.width, square.height) / 8),
                 transform: `translate(${square.x}px, ${square.y}px)`,
+                ...(square.color && !violatedIds.has(square.id) ? { backgroundColor: square.color } : {}),
               }}
-              onPointerDown={(event) => handlePointerDown(event, square.id)}
-              onPointerMove={(event) => handlePointerMove(event, square.id)}
-              onPointerUp={(event) => handlePointerUp(event, square.id)}
+              onPointerDown={(event) => handlePointerDown(event, square)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onDoubleClick={(event) => handleSquareDoubleClick(event, square)}
             >
-              <span className="room-square__name">{square.roomName}</span>
-              <span className="room-square__area">{Number.isNaN(square.targetArea) ? '—' : square.targetArea}</span>
               <div
                 className="room-square__resize-handle"
                 onPointerDown={(event) => handleResizePointerDown(event, square.id)}
@@ -330,6 +405,45 @@ function RoomCanvas({ rooms }) {
                   <path d="M3 12H21M3 12L7 8M3 12L7 16M21 12L17 8M21 12L17 16" />
                 </svg>
               </div>
+            </div>
+          ))}
+          {squares.map((square) => (
+            <div
+              key={`${square.id}-label`}
+              className="room-square-label"
+              style={{
+                width: square.width,
+                height: square.height,
+                fontSize: Math.max(11, Math.min(square.width, square.height) / 8),
+                transform: `translate(${square.x}px, ${square.y}px)`,
+                ...(square.color && !violatedIds.has(square.id)
+                  ? { color: getContrastTextColor(square.color) }
+                  : {}),
+              }}
+            >
+              <span className="room-square__name">{square.roomName}</span>
+              {editingId === square.id ? (
+                <label className="room-square__dimension-label">
+                  Set width:
+                  <input
+                    type="number"
+                    className="room-square__dimension-input"
+                    value={editValue}
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    onChange={(event) => setEditValue(event.target.value)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onBlur={() => commitWidthEdit(square.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitWidthEdit(square.id)
+                      if (event.key === 'Escape') setEditingId(null)
+                    }}
+                  />
+                </label>
+              ) : (
+                <span className="room-square__area">{formatDimensions(square, scale)}</span>
+              )}
             </div>
           ))}
         </div>

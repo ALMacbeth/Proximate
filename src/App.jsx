@@ -6,6 +6,7 @@ import './App.css'
 const ROOM_NAME_HEADER = 'Room Name'
 const TARGET_AREA_HEADER = 'Target Area'
 const ADJACENT_ROOMS_HEADER = 'Adjacent Rooms'
+const MIN_WIDTH_HEADER = 'Min Width'
 
 function normalizeHeader(value) {
     return String(value ?? '').trim().toLowerCase()
@@ -25,8 +26,14 @@ function parseAdjacentRooms(value) {
     }, {})
 }
 
+function extractFillColor(cell) {
+    const rgb = cell?.s?.fgColor?.rgb
+    if (!rgb || typeof rgb !== 'string' || rgb.length < 6) return undefined
+    return `#${rgb.slice(-6)}`
+}
+
 function parseWorkbook(arrayBuffer) {
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    const workbook = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
@@ -39,6 +46,7 @@ function parseWorkbook(arrayBuffer) {
     const roomNameIndex = normalizedHeaders.indexOf(normalizeHeader(ROOM_NAME_HEADER))
     const targetAreaIndex = normalizedHeaders.indexOf(normalizeHeader(TARGET_AREA_HEADER))
     const adjacentRoomsIndex = normalizedHeaders.indexOf(normalizeHeader(ADJACENT_ROOMS_HEADER))
+    const minWidthIndex = normalizedHeaders.indexOf(normalizeHeader(MIN_WIDTH_HEADER))
 
     if (roomNameIndex === -1 || targetAreaIndex === -1 || adjacentRoomsIndex === -1) {
         throw new Error(
@@ -46,15 +54,24 @@ function parseWorkbook(arrayBuffer) {
         )
     }
 
+    const roomNameColumn = XLSX.utils.encode_col(roomNameIndex)
+
     const rooms = {}
     let nextId = 0
     dataRows
-        .filter((row) => row[roomNameIndex] !== '' && row[roomNameIndex] !== undefined)
-        .forEach((row) => {
+        .map((row, index) => ({ row, excelRowNumber: index + 2 }))
+        .filter(({ row }) => row[roomNameIndex] !== '' && row[roomNameIndex] !== undefined)
+        .forEach(({ row, excelRowNumber }) => {
+            const minWidthValue = minWidthIndex === -1 ? '' : row[minWidthIndex]
+            const minWidth = minWidthValue === '' || minWidthValue === undefined ? undefined : parseFloat(minWidthValue)
+            const roomNameCell = sheet[`${roomNameColumn}${excelRowNumber}`]
+
             rooms[`room-${nextId++}`] = {
                 roomName: String(row[roomNameIndex]),
                 targetArea: parseFloat(row[targetAreaIndex]),
                 adjacentRooms: parseAdjacentRooms(row[adjacentRoomsIndex]),
+                minWidth: Number.isFinite(minWidth) ? minWidth : undefined,
+                color: extractFillColor(roomNameCell),
             }
         })
     return rooms
@@ -130,7 +147,7 @@ function App() {
                 {fileDropToggle && (
                     <p>
                         Drop an Excel file with <code>{ROOM_NAME_HEADER}</code>, <code>{TARGET_AREA_HEADER}</code> and{' '}
-                        <code>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br></br>List adjacent rooms in with the format "ROOM NAME : MAX DISTANCE"<br></br>For multiple adjacency rules, list in the same cell seperated by a ","
+                        <code>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br></br>List adjacent rooms in with the format "ROOM NAME : MAX DISTANCE"<br></br>For multiple adjacency rules, list in the same cell seperated by a ","<br></br>Optionally add a <code>{MIN_WIDTH_HEADER}</code> column (in meters) to set a minimum room width
                     </p>)}
             </div>
             {fileDropToggle && (
