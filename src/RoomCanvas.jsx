@@ -24,17 +24,33 @@ function RoomCanvas({ rooms }) {
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
 
-  const { selectedIds, setSelectedIds, handlePointerDown, handlePointerMove, handlePointerUp } = useRoomDrag({
+  const {
+    selectedIds,
+    setSelectedIds,
+    snapGuides: dragSnapGuides,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+  } = useRoomDrag({
     roomBoxes,
     setRoomBoxes,
     getLayoutPointerPosition,
+    zoom: view.zoom,
   })
 
-  const { handleResizePointerDown, handleResizePointerMove, handleResizePointerUp } = useRoomResize({
+  const {
+    handleResizePointerDown,
+    handleResizePointerMove,
+    handleResizePointerUp,
+    snapGuides: resizeSnapGuides,
+  } = useRoomResize({
+    roomBoxes,
     setRoomBoxes,
     scale,
     zoom: view.zoom,
   })
+
+  const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
 
   useLayoutEffect(() => {
     if (rooms.length === 0) {
@@ -143,6 +159,16 @@ function RoomCanvas({ rooms }) {
                 x2={connection.toPoint.x}
                 y2={connection.toPoint.y}
                 className={`connection${connection.violated ? ' connection--violated' : ' connection--ok'}`}
+              />
+            ))}
+            {snapGuides.map((guide, index) => (
+              <line
+                key={`snap-guide-${index}`}
+                x1={guide.orientation === 'vertical' ? guide.position : guide.from}
+                y1={guide.orientation === 'vertical' ? guide.from : guide.position}
+                x2={guide.orientation === 'vertical' ? guide.position : guide.to}
+                y2={guide.orientation === 'vertical' ? guide.to : guide.position}
+                className="snap-guide"
               />
             ))}
           </svg>

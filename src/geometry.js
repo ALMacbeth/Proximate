@@ -144,6 +144,61 @@ export function computeConnections(roomBoxes, scale) {
   return connections
 }
 
+const SNAP_TARGET_KINDS = ['start', 'center', 'end']
+
+function edgePoints(min, size) {
+  return { start: min, center: min + size / 2, end: min + size }
+}
+
+// Shared snap search along one axis. `others` is an array of
+// { min, size, crossMin, crossSize } — position/size on the snap axis, plus
+// position/size on the perpendicular axis (needed to draw a guide line that
+// spans both the moving and matched boxes). `anchorOnly` restricts the
+// moving box to only its far edge as a snap candidate (resizing, where the
+// near edge is fixed); otherwise start/center/end are all candidates
+// (dragging, where the whole box moves). Returns the delta to apply plus a
+// `guide` — the matched coordinate and the perpendicular span to draw a line
+// across — or `guide: null` if nothing was within `threshold`.
+function findAxisSnap(min, size, crossMin, crossSize, others, threshold, anchorOnly) {
+  const moving = edgePoints(min, size)
+  const movingKinds = anchorOnly ? ['end'] : SNAP_TARGET_KINDS
+
+  let bestDelta = 0
+  let bestDistance = threshold
+  let bestGuide = null
+
+  others.forEach((other) => {
+    const otherPoints = edgePoints(other.min, other.size)
+    movingKinds.forEach((movingKind) => {
+      SNAP_TARGET_KINDS.forEach((otherKind) => {
+        const distance = Math.abs(otherPoints[otherKind] - moving[movingKind])
+        if (distance < bestDistance) {
+          bestDistance = distance
+          bestDelta = otherPoints[otherKind] - moving[movingKind]
+          bestGuide = {
+            position: otherPoints[otherKind],
+            from: Math.min(crossMin, other.crossMin),
+            to: Math.max(crossMin + crossSize, other.crossMin + other.crossSize),
+          }
+        }
+      })
+    })
+  })
+
+  return { delta: bestDelta, guide: bestGuide }
+}
+
+// Dragging: the moving box's start, center, and end are all snap candidates.
+export function computeDragSnap(min, size, crossMin, crossSize, others, threshold) {
+  return findAxisSnap(min, size, crossMin, crossSize, others, threshold, false)
+}
+
+// Resizing: only the far edge (min + size) actually moves — the near edge is
+// anchored — so only that edge is a snap candidate.
+export function computeResizeSnap(min, size, crossMin, crossSize, others, threshold) {
+  return findAxisSnap(min, size, crossMin, crossSize, others, threshold, true)
+}
+
 // Simple shelf-packing for the initial layout: fills a row left-to-right,
 // wrapping to a new row once a box would overflow containerWidth.
 export function packRoomBoxes(roomBoxes, containerWidth) {
