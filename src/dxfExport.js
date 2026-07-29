@@ -1,11 +1,11 @@
 const ACI_RED = 1
 const ACI_GREEN = 3
 
-function toMeters(square, scale) {
-  const realWidth = square.width / scale
-  const realHeight = square.height / scale
-  const centerX = (square.x + square.width / 2) / scale
-  const centerY = -(square.y + square.height / 2) / scale
+function toMeters(roomBox, scale) {
+  const realWidth = roomBox.width / scale
+  const realHeight = roomBox.height / scale
+  const centerX = (roomBox.x + roomBox.width / 2) / scale
+  const centerY = -(roomBox.y + roomBox.height / 2) / scale
   return { centerX, centerY, realWidth, realHeight }
 }
 
@@ -27,8 +27,8 @@ function textEntity(x, y, height, text, layer, color) {
   return lines.join('\n')
 }
 
-function squareEntities(square, scale, color) {
-  const { centerX, centerY, realWidth, realHeight } = toMeters(square, scale)
+function roomEntities(roomBox, scale, color) {
+  const { centerX, centerY, realWidth, realHeight } = toMeters(roomBox, scale)
   const halfWidth = realWidth / 2
   const halfHeight = realHeight / 2
   const corners = [
@@ -42,12 +42,12 @@ function squareEntities(square, scale, color) {
     return lineEntity(corner[0], corner[1], next[0], next[1], 'ROOMS', color)
   })
 
-  const areaLabel = Number.isNaN(square.targetArea) ? '?' : square.targetArea
+  const areaLabel = Number.isNaN(roomBox.targetArea) ? '?' : roomBox.targetArea
   const label = textEntity(
     centerX - halfWidth,
     centerY,
     Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5)),
-    `${square.roomName} (${areaLabel} m2)`,
+    `${roomBox.roomName} (${areaLabel} m2)`,
     'ROOMS',
     color,
   )
@@ -62,12 +62,12 @@ function connectionEntity(connection, scale) {
   return lineEntity(from.x, from.y, to.x, to.y, 'CONNECTIONS', color)
 }
 
-export function buildDxf({ squares, connections, violatedIds, scale }) {
+export function buildDxf({ rooms, connections, violatedIds, scale }) {
   const entities = []
 
-  squares.forEach((square) => {
-    const color = violatedIds.has(square.id) ? ACI_RED : null
-    entities.push(...squareEntities(square, scale, color))
+  rooms.forEach((roomBox) => {
+    const color = violatedIds.has(roomBox.id) ? ACI_RED : null
+    entities.push(...roomEntities(roomBox, scale, color))
   })
 
     //don't plot distance lines (add a toggle for this option later)
@@ -77,14 +77,4 @@ export function buildDxf({ squares, connections, violatedIds, scale }) {
   })*/
 
   return ['0', 'SECTION', '2', 'ENTITIES', ...entities, '0', 'ENDSEC', '0', 'EOF'].join('\n')
-}
-
-export function downloadDxf(content, filename) {
-  const blob = new Blob([content], { type: 'application/dxf' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }

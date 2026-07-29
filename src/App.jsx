@@ -32,6 +32,30 @@ function extractFillColor(cell) {
     return `#${rgb.slice(-6)}`
 }
 
+function parseLayoutJson(text) {
+    let data
+    try {
+        data = JSON.parse(text)
+    } catch {
+        throw new Error('That file is not valid saved layout file')
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('The layout file is empty or invalid.')
+    }
+
+    const rooms = {}
+    data.forEach((room, index) => {
+        if (typeof room?.roomName !== 'string') {
+            throw new Error('The layout file does not look like an exported room layout.')
+        }
+        const id = typeof room.id === 'string' && room.id ? room.id : `room-${index}`
+        const { id: _unused, ...rest } = room
+        rooms[id] = rest
+    })
+    return rooms
+}
+
 function parseWorkbook(arrayBuffer) {
     const workbook = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -89,15 +113,18 @@ function App() {
         if (!file) return
         setError('')
 
-        if (!/\.(xlsx|xls)$/i.test(file.name)) {
-            setError('Please upload an Excel file (.xlsx or .xls).')
+        const isExcel = /\.(xlsx|xls)$/i.test(file.name)
+        const isLayoutJson = /\.json$/i.test(file.name)
+
+        if (!isExcel && !isLayoutJson) {
+            setError('Please upload an Excel file (.xlsx or .xls) or a previously exported layout (.json).')
             return
         }
 
         const reader = new FileReader()
         reader.onload = (event) => {
             try {
-                const parsed = parseWorkbook(event.target.result)
+                const parsed = isLayoutJson ? parseLayoutJson(event.target.result) : parseWorkbook(event.target.result)
                 setRooms(parsed)
                 setFileName(file.name)
             } catch (err) {
@@ -107,7 +134,9 @@ function App() {
             }
         }
         reader.onerror = () => setError('Failed to read the file.')
-        reader.readAsArrayBuffer(file)
+
+        if (isLayoutJson) reader.readAsText(file)
+        else reader.readAsArrayBuffer(file)
     }, [])
 
     const handleDrop = useCallback(
@@ -163,11 +192,11 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') handleBrowseClick()
                     }}
                 >
-                    <p>Drag &amp; drop an Excel file here, or click to browse</p>
+                    <p>Drag &amp; drop an Excel file (or a previously exported layout file) here, or click to browse</p>
                     <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".xlsx,.xls"
+                        accept=".xlsx,.xls,.json"
                         onChange={handleFileInputChange}
                         hidden
                     />
@@ -175,7 +204,7 @@ function App() {
             )}
             {!fileDropToggle && (
                 <button 
-                    onClick={() => setDropToggle(true)}>Upload another file
+                    onClick={() => setDropToggle(true)}>Upload a new file
                 </button>
             )}
 

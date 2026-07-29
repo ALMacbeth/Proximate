@@ -14,6 +14,11 @@
   }
 }
 
+.export-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .dropzone {
   width: 100%;
   max-width: 480px;
@@ -86,6 +91,10 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  /* The root <svg> element's default overflow is hidden (unlike normal HTML
+     elements), so without this, any line reaching outside this box's own
+     nominal size would get silently clipped even though the outer .canvas
+     still has room to show it. */
   overflow: visible;
   pointer-events: none;
 }
@@ -101,7 +110,7 @@
   stroke-width: 2;
 }
 
-.room-square {
+.room-card {
   position: absolute;
   top: 0;
   left: 0;
@@ -127,17 +136,17 @@
   }
 }
 
-.room-square--violated {
+.room-card--violated {
   background: rgba(229, 72, 77, 0.15);
   border-color: #e5484d;
 }
 
-.room-square--selected {
+.room-card--selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.room-square-label {
+.room-card-label {
   position: absolute;
   top: 0;
   left: 0;
@@ -152,25 +161,28 @@
   text-align: center;
   pointer-events: none;
 
-  & .room-square__dimension-label,
+  & .room-card__dimension-label,
   & input {
     pointer-events: auto;
   }
 }
 
-.room-square__name {
+.room-card__name {
   font-weight: 500;
   text-align: center;
   line-height: 1.2;
+  /* Intentionally no line-clamp/overflow:hidden here: this text now lives in
+     the unclipped .room-card-label layer above, so it's free to wrap to as
+     many lines as it needs instead of being truncated. */
   overflow-wrap: break-word;
 }
 
-.room-square__area {
+.room-card__area {
   font-size: 0.85em;
   opacity: 0.75;
 }
 
-.room-square__dimension-label {
+.room-card__dimension-label {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -179,7 +191,7 @@
   opacity: 0.75;
 }
 
-.room-square__dimension-input {
+.room-card__dimension-input {
   width: 4.5em;
   font: inherit;
   font-size: 0.85em;
@@ -192,7 +204,7 @@
   cursor: text;
 }
 
-.room-square__resize-handle {
+.room-card__resize-handle {
   position: absolute;
   right: 2px;
   bottom: 2px;
@@ -212,6 +224,6 @@
   }
 }
 
-.room-square__resize-icon {
+.room-card__resize-icon {
   pointer-events: none;
 }
