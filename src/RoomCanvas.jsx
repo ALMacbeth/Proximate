@@ -13,6 +13,7 @@ import {
 import { usePanZoom } from './usePanZoom.js'
 import { useRoomDrag } from './useRoomDrag.js'
 import { useRoomResize } from './useRoomResize.js'
+import { useUndoHistory } from './useUndoHistory.js'
 
 function RoomCanvas({ rooms }) {
   const containerRef = useRef(null)
@@ -23,6 +24,8 @@ function RoomCanvas({ rooms }) {
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
+
+  const { recordHistory, clearHistory } = useUndoHistory(roomBoxes, setRoomBoxes)
 
   const {
     selectedIds,
@@ -36,6 +39,7 @@ function RoomCanvas({ rooms }) {
     setRoomBoxes,
     getLayoutPointerPosition,
     zoom: view.zoom,
+    recordHistory,
   })
 
   const {
@@ -48,11 +52,16 @@ function RoomCanvas({ rooms }) {
     setRoomBoxes,
     scale,
     zoom: view.zoom,
+    recordHistory,
   })
 
   const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
 
   useLayoutEffect(() => {
+    // A fresh file (or reset) invalidates any history from whatever was
+    // loaded before it, so undo can't reach back into a different room set.
+    clearHistory()
+
     if (rooms.length === 0) {
       setRoomBoxes([])
       setScale(1)
@@ -97,16 +106,18 @@ function RoomCanvas({ rooms }) {
   }
 
   const commitWidthEdit = (id) => {
-    setRoomBoxes((prev) =>
-      prev.map((box) => {
-        if (box.id !== id) return box
-        const widthMeters = parseFloat(editValue)
-        if (!Number.isFinite(widthMeters) || widthMeters <= 0) return box
-        const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
-        const { width, height } = clampWidthToArea(widthMeters * scale, box.area, minWidthPx)
-        return { ...box, width, height }
-      }),
-    )
+    const widthMeters = parseFloat(editValue)
+    if (Number.isFinite(widthMeters) && widthMeters > 0) {
+      recordHistory()
+      setRoomBoxes((prev) =>
+        prev.map((box) => {
+          if (box.id !== id) return box
+          const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
+          const { width, height } = clampWidthToArea(widthMeters * scale, box.area, minWidthPx)
+          return { ...box, width, height }
+        }),
+      )
+    }
     setEditingId(null)
   }
 

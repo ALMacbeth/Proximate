@@ -5,13 +5,14 @@ const SNAP_THRESHOLD_PX = 8
 
 // Dragging the resize handle sets a room box's width directly; height is
 // derived via clampWidthToArea to keep the room's area constant.
-export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom }) {
+export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHistory }) {
   const resizeState = useRef({})
   const [snapGuides, setSnapGuides] = useState([])
 
   const handleResizePointerDown = (event, roomBox) => {
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
+    recordHistory()
     resizeState.current[roomBox.id] = {
       startX: event.clientX,
       startWidth: roomBox.width,

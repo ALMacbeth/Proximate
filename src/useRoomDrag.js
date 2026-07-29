@@ -8,7 +8,7 @@ const SNAP_THRESHOLD_PX = 8
 // tracked as a delta from the pointer's position at drag-start rather than a
 // per-room "grab offset", so the whole selection translates by the same
 // amount regardless of which room in the group was actually grabbed.
-export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition, zoom }) {
+export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition, zoom, recordHistory }) {
   const dragState = useRef(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [snapGuides, setSnapGuides] = useState([])
@@ -33,6 +33,8 @@ export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition,
     const isGroupMember = selectedIds.has(roomBox.id) && selectedIds.size > 1
     const activeSelection = isGroupMember ? selectedIds : new Set([roomBox.id])
     if (!isGroupMember) setSelectedIds(activeSelection)
+
+    recordHistory()
 
     const pointerStart = getLayoutPointerPosition(event)
     const startPositions = new Map()
