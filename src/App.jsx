@@ -164,6 +164,7 @@ function App() {
     const handleFileInputChange = (event) => {
         handleFile(event.target.files?.[0])
         event.target.value = ''
+        setDropToggle(false)
     }
 
     const roomIds = Object.keys(rooms)
