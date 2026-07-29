@@ -1,6 +1,12 @@
 const MIN_SIZE = 48
 const MAX_SIZE = 200
-const MIN_DIMENSION = 24
+// Kept small: zoom lets the user compensate for a visually tiny room, so this
+// only needs to guard against clampWidthToArea's area/width blowing up near
+// zero — not guarantee comfortable clicking at the default zoom level. A
+// smaller floor also shrinks MIN_DIMENSION^2, making it far less likely a
+// small room's true area falls below it when sharing a file with a much
+// larger room (which would otherwise freeze its resize range at one point).
+const MIN_DIMENSION = 6
 const GAP = 12
 
 export function computeScale(rooms) {
@@ -11,8 +17,11 @@ export function computeScale(rooms) {
 
 // Builds the on-canvas box for each room: initial width/height are equal
 // (a square) sized so area on screen is proportional to targetArea. `area`
-// is recorded here (not recomputed later) so resizing can preserve it
-// exactly even after the box becomes a non-square rectangle.
+// is recorded as the room's true physical area (targetArea * scale^2), not
+// size^2 — size can be inflated above that by MIN_SIZE/MIN_DIMENSION/minWidth
+// floors, and preserving THAT inflated value through resize (instead of the
+// real target area) previously caused resize bounds to collapse to a single,
+// frozen point for small rooms sharing a file with a much larger one.
 export function computeRoomBoxes(rooms, scale) {
   return rooms.map((room) => {
     const areaSize = Math.sqrt(Math.max(room.targetArea, 0)) * scale
@@ -39,7 +48,7 @@ export function computeRoomBoxes(rooms, scale) {
       color: room.color,
       width: size,
       height: size,
-      area: size * size,
+      area: Math.max(room.targetArea, 0) * scale * scale,
     }
   })
 }
@@ -51,8 +60,13 @@ export function computeRoomBoxes(rooms, scale) {
 export function clampWidthToArea(desiredWidth, area, minWidthPx) {
   const lowerBound = Math.max(MIN_DIMENSION, minWidthPx)
   const upperBound = Math.max(lowerBound, Math.min(area / MIN_DIMENSION, minWidthPx > 0 ? area / minWidthPx : Infinity))
+
+  // Note: for a room whose true area is smaller than lowerBound^2, this
+  // collapses upperBound to lowerBound — the room can't be resized at all
+  // without exceeding its target area, so it stays fixed at its minimum
+  // size rather than growing past it.
   const width = Math.min(upperBound, Math.max(lowerBound, desiredWidth))
-  const height = Math.max(minWidthPx, area / width)
+  const height = Math.max(MIN_DIMENSION, minWidthPx, area / width)
   return { width, height }
 }
 

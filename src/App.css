@@ -110,12 +110,6 @@
   stroke-width: 2;
 }
 
-.snap-guide {
-  stroke: #ec4899;
-  stroke-width: 1;
-  stroke-dasharray: 4 4;
-}
-
 .room-card {
   position: absolute;
   top: 0;
