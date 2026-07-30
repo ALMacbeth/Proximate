@@ -39,7 +39,7 @@ function roomEntities(roomBox, scale, color) {
   ]
   const sides = corners.map((corner, index) => {
     const next = corners[(index + 1) % corners.length]
-    return lineEntity(corner[0], corner[1], next[0], next[1], 'ROOMS', color)
+    return lineEntity(corner[0], corner[1], next[0], next[1], 'ROOM BOUNDARIES', color)
   })
 
   const areaLabel = Number.isNaN(roomBox.targetArea) ? '?' : roomBox.targetArea
@@ -48,19 +48,20 @@ function roomEntities(roomBox, scale, color) {
     centerY,
     Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5)),
     `${roomBox.roomName} (${areaLabel} m2)`,
-    'ROOMS',
+    'ROOMS TAGS',
     color,
   )
 
   return [...sides, label]
 }
+//don't plot distance lines (add a toggle for this option later)
 
-function connectionEntity(connection, scale) {
+/*function connectionEntity(connection, scale) {
   const from = pointToMeters(connection.fromPoint, scale)
   const to = pointToMeters(connection.toPoint, scale)
   const color = connection.violated ? ACI_RED : ACI_GREEN
   return lineEntity(from.x, from.y, to.x, to.y, 'CONNECTIONS', color)
-}
+}*/
 
 export function buildDxf({ rooms, connections, violatedIds, scale }) {
   const entities = []
@@ -70,8 +71,7 @@ export function buildDxf({ rooms, connections, violatedIds, scale }) {
     entities.push(...roomEntities(roomBox, scale, color))
   })
 
-    //don't plot distance lines (add a toggle for this option later)
-
+    
   /*connections.forEach((connection) => {
     entities.push(connectionEntity(connection, scale))
   })*/

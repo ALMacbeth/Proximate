@@ -7,5 +7,9 @@ export default defineConfig({
     plugins: [plugin()],
     server: {
         port: 49396,
+        watch: {
+            // ignore Visual Studio metadata and other common noisy folders
+            ignored: ['**/.vs/**', '**/node_modules/**', '**/.git/**']
+        }
     }
 })

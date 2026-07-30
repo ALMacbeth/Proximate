@@ -1,17 +1,21 @@
 #center {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-  padding: 20px 20px;
-  box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    place-content: center;
+    place-items: center;
+    flex-grow: 1;
+    padding: 20px 20px;
+    
+    width: 96vw;
+    margin-left: calc(50% - 48vw);
+    margin-right: calc(50% - 48vw);
+    box-sizing: border-box;
 
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
+    @media (max-width: 1024px) {
+        padding: 32px 20px 24px;
+        gap: 18px;
+    }
 }
 
 .export-actions {
@@ -54,15 +58,18 @@
 }
 
 .canvas {
-  position: relative;
-  width: 100%;
-  min-height: 500px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-sizing: border-box;
-  overflow: hidden;
-  cursor: grab;
-  touch-action: none;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    width: 100%;
+    min-height: 500px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-sizing: border-box;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
 }
 
 .canvas--panning {
@@ -91,10 +98,6 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* The root <svg> element's default overflow is hidden (unlike normal HTML
-     elements), so without this, any line reaching outside this box's own
-     nominal size would get silently clipped even though the outer .canvas
-     still has room to show it. */
   overflow: visible;
   pointer-events: none;
 }
@@ -177,9 +180,6 @@
   font-weight: 500;
   text-align: center;
   line-height: 1.2;
-  /* Intentionally no line-clamp/overflow:hidden here: this text now lives in
-     the unclipped .room-card-label layer above, so it's free to wrap to as
-     many lines as it needs instead of being truncated. */
   overflow-wrap: break-word;
 }
 

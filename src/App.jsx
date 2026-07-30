@@ -8,9 +8,6 @@ const TARGET_AREA_HEADER = 'Target Area'
 const ADJACENT_ROOMS_HEADER = 'Adjacent Rooms'
 const MIN_WIDTH_HEADER = 'Min Width'
 
-function normalizeHeader(value) {
-    return String(value ?? '').trim().toLowerCase()
-}
 
 function parseAdjacentRooms(value) {
     const text = String(value ?? '').trim()
@@ -19,7 +16,7 @@ function parseAdjacentRooms(value) {
     return text.split(',').reduce((adjacentRooms, pair) => {
         const [name, distance] = pair.split(':')
         const trimmedName = name?.trim()
-        if (!trimmedName || distance === undefined) return adjacentRooms
+        if (!trimmedName || distance === undefined) return {}
 
         adjacentRooms[trimmedName] = parseFloat(distance.trim())
         return adjacentRooms
@@ -66,15 +63,14 @@ function parseWorkbook(arrayBuffer) {
     }
 
     const [headerRow, ...dataRows] = rows
-    const normalizedHeaders = headerRow.map(normalizeHeader)
-    const roomNameIndex = normalizedHeaders.indexOf(normalizeHeader(ROOM_NAME_HEADER))
-    const targetAreaIndex = normalizedHeaders.indexOf(normalizeHeader(TARGET_AREA_HEADER))
-    const adjacentRoomsIndex = normalizedHeaders.indexOf(normalizeHeader(ADJACENT_ROOMS_HEADER))
-    const minWidthIndex = normalizedHeaders.indexOf(normalizeHeader(MIN_WIDTH_HEADER))
+    const roomNameIndex = headerRow.indexOf(ROOM_NAME_HEADER)
+    const targetAreaIndex = headerRow.indexOf(TARGET_AREA_HEADER)
+    const adjacentRoomsIndex = headerRow.indexOf(ADJACENT_ROOMS_HEADER)
+    const minWidthIndex = headerRow.indexOf(MIN_WIDTH_HEADER)
 
     if (roomNameIndex === -1 || targetAreaIndex === -1 || adjacentRoomsIndex === -1) {
         throw new Error(
-            `Could not find required columns "${ROOM_NAME_HEADER}", "${TARGET_AREA_HEADER}" and "${ADJACENT_ROOMS_HEADER}".`,
+            `Unable to load room data - Please ensure your file contains the following required column headers: "${ROOM_NAME_HEADER}", "${TARGET_AREA_HEADER}" and "${ADJACENT_ROOMS_HEADER}".`,
         )
     }
 
@@ -173,11 +169,28 @@ function App() {
     return (
         <section id="center">
             <div>
-                <h1 style={{ fontSize: '2rem' }}>Room Schedule Import</h1>
+                <h1 style={{ fontSize: '1.5rem' }}>Room Schedule Import</h1>
+                {fileName && !error && (
+                    <p className="filename">
+                        Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
+                        <button
+                            onClick={() => setDropToggle(true)}>Upload a new file
+                        </button>
+                    </p>
+
+                )}
                 {fileDropToggle && (
-                    <p>
-                        Drop an Excel file with <code>{ROOM_NAME_HEADER}</code>, <code>{TARGET_AREA_HEADER}</code> and{' '}
-                        <code>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br></br>List adjacent rooms in with the format "ROOM NAME : MAX DISTANCE"<br></br>For multiple adjacency rules, list in the same cell seperated by a ","<br></br>Optionally add a <code>{MIN_WIDTH_HEADER}</code> column (in meters) to set a minimum room width
+                    <p style={{ fontSize:"12px" }}>
+                        Drop an Excel file with <code style={{ fontSize: "12px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "12px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "12px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
+                        </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "12px" }}>{"Other Room Name : Max Distance"}</code><br>
+                        </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "12px" }}>{","}</code>)<br>
+                        </br>If needed, you can add a <code style={{ fontSize: "12px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
+                        </br><br>
+                        </br>Imported rooms will be displayed below as boxes which can be arranged by clicking and dragging.<br>
+                        </br>These shapes can be adjusted in width and height while maintaining the target room area by clicking and dragging the handle in the bottom right corner.<br>
+                        </br>Proximity requirements are highlighted as lines between rooms. If the distance between a room and the nearest instance of a target room is exceeded, those rooms are highlighted in red<br>
+                        </br>To make the diagram easier to read, you can apply fills to the excel file rows and the imported rooms will be colored accordingly.<br>
+                        </br>When you are happy with a layout, you can either save a layout file to be reloaded later, or export a scaled CAD file which can be loaded into the design software of your choice.
                     </p>)}
             </div>
             {fileDropToggle && (
@@ -203,20 +216,11 @@ function App() {
                     />
                 </div>
             )}
-            {!fileDropToggle && (
-                <button 
-                    onClick={() => setDropToggle(true)}>Upload a new file
-                </button>
-            )}
 
-            {fileName && !error && (
-                <p className="filename">
-                    Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'}
-                </p>
-            )}
+            
             {error && <p className="error">{error}</p>}
 
-            <RoomCanvas rooms={roomList} />
+            {!fileDropToggle && <RoomCanvas rooms={roomList} />}
         </section>
     )
 }

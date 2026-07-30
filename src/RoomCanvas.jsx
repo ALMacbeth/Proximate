@@ -131,19 +131,22 @@ function RoomCanvas({ rooms }) {
 
   const handleExportJson = () => {
     downloadFile(JSON.stringify(roomBoxes, null, 2), 'room-layout.json', 'application/json')
-  }
+    }
+
+
 
   return (
     <>
       {roomBoxes.length > 0 && (
         <div className="export-actions">
           <button type="button" className="export-button" onClick={handleExportDxf}>
-            Export as to CAD (.dxf)
+            Export as CAD (.dxf)
           </button>
           <button type="button" className="export-button" onClick={handleExportJson}>
             Save layout file (.json)
           </button>
-        </div>
+              </div>
+
       )}
       <div
         className={`canvas${isPanning ? ' canvas--panning' : ''}`}

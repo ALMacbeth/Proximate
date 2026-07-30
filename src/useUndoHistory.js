@@ -22,7 +22,7 @@ export function useUndoHistory(roomBoxes, setRoomBoxes) {
 
   useEffect(() => {
     const handleKeyDown = (event) => {
-      const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z'
+      const isUndoShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'
       if (!isUndoShortcut) return
 
       // Let the browser's native text-field undo work normally while typing
