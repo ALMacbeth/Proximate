@@ -120,9 +120,21 @@ export function nearestSidePoints(a, b) {
   return { distance, from, to }
 }
 
+// True minimum distance between two axis-aligned rectangles' boundaries —
+// correctly finds e.g. a corner-to-corner gap for diagonally-offset rooms,
+// which comparing only side midpoints (nearestSidePoints, used for the
+// visual connection line) can't. dx/dy are 0 when the rectangles overlap on
+// that axis, so this is also correctly 0 for overlapping rooms.
+function rectDistance(a, b) {
+  const dx = Math.max(0, b.x - (a.x + a.width), a.x - (b.x + b.width))
+  const dy = Math.max(0, b.y - (a.y + a.height), a.y - (b.y + b.height))
+  return Math.hypot(dx, dy)
+}
+
 // For each room's adjacency entries, finds the nearest other room with that
-// name (by center distance) and records the closest side-to-side points and
-// whether that gap exceeds the entry's max distance.
+// name (by center distance), draws the connection line between their closest
+// side midpoints, but checks the max-distance violation against the true
+// closest-edge-to-edge gap (rectDistance) rather than that midpoint distance.
 export function computeConnections(roomBoxes, scale) {
   const byName = new Map()
   roomBoxes.forEach((roomBox) => {
@@ -142,7 +154,7 @@ export function computeConnections(roomBoxes, scale) {
         centerDistance(roomBox, candidate) < centerDistance(roomBox, closest) ? candidate : closest,
       )
 
-      const { distance, from: fromPoint, to: toPoint } = nearestSidePoints(roomBox, nearest)
+      const { from: fromPoint, to: toPoint } = nearestSidePoints(roomBox, nearest)
 
       connections.push({
         id: `${roomBox.id}->${nearest.id}-${name}`,
@@ -150,7 +162,7 @@ export function computeConnections(roomBoxes, scale) {
         to: nearest,
         fromPoint,
         toPoint,
-        violated: distance > maxDistance * scale,
+        violated: rectDistance(roomBox, nearest) > maxDistance * scale,
       })
     })
   })
