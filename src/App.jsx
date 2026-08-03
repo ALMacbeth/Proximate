@@ -192,7 +192,7 @@ function App() {
                         </br>To make the diagram easier to read, you can apply fills to the excel file rows and the imported rooms will be colored accordingly.<br>
                         </br>When you are happy with a layout, you can either save a layout file to be reloaded later, or export a scaled CAD file which can be loaded into the design software of your choice.<br>
                         </br>
-                        <a href="./public/AreaScheduleTemplate.xlsx" download ><button> Download Excel Template </button></a>
+                        <a href="./AreaScheduleTemplate.xlsx" download ><button> Download Excel Template </button></a>
                     </p>)}
             </div>
             {fileDropToggle && (
