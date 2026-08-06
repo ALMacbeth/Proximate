@@ -180,11 +180,11 @@ function App() {
 
                 )}
                 {fileDropToggle && (
-                    <p style={{ fontSize:"12px" }}>
-                        Drop an Excel file with <code style={{ fontSize: "12px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "12px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "12px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
-                        </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "12px" }}>{"Other Room Name : Max Distance"}</code><br>
-                        </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "12px" }}>{","}</code>)<br>
-                        </br>If needed, you can add a <code style={{ fontSize: "12px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
+                    <p style={{ fontSize:"14px" }}>
+                        Drop an Excel file with <code style={{ fontSize: "14px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "14px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "14px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
+                        </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "14px" }}>{"Other Room Name : Max Distance"}</code><br>
+                        </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "14px" }}>{","}</code>)<br>
+                        </br>If needed, you can add a <code style={{ fontSize: "14px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
                         </br><br>
                         </br>Imported rooms will be displayed below as boxes which can be arranged by clicking and dragging.<br>
                         </br>These shapes can be adjusted in width and height while maintaining the target room area by clicking and dragging the handle in the bottom right corner.<br>
