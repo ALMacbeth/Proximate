@@ -14,9 +14,11 @@ import { usePanZoom } from './usePanZoom.js'
 import { useRoomDrag } from './useRoomDrag.js'
 import { useRoomResize } from './useRoomResize.js'
 import { useUndoHistory } from './useUndoHistory.js'
+import { useDragSelect } from './useDragSel.js'
 
 function RoomCanvas({ rooms }) {
   const containerRef = useRef(null)
+  const gestureModeRef = useRef(null)
   const [roomBoxes, setRoomBoxes] = useState([])
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
@@ -57,6 +59,13 @@ function RoomCanvas({ rooms }) {
 
   const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
 
+  const {
+    selectionRect,
+    handlePointerDown: handleSelectPointerDown,
+    handlePointerMove: handleSelectPointerMove,
+    handlePointerUp: handleSelectPointerUp,
+  } = useDragSelect({ roomBoxes, selectedIds, setSelectedIds, getLayoutPointerPosition })
+
   useLayoutEffect(() => {
     // A fresh file (or reset) invalidates any history from whatever was
     // loaded before it, so undo can't reach back into a different room set.
@@ -91,11 +100,29 @@ function RoomCanvas({ rooms }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rooms])
 
-  // Clicking empty canvas background (not shift-held) deselects, matching
-  // the usual "click empty space to deselect" convention alongside panning.
+  // Middle-mouse-button drag on empty canvas background pans the view;
+  // left-button drag draws a marquee selection instead. gestureModeRef is
+  // set synchronously here (not via React state) so the move/up handlers
+  // route correctly even before a re-render lands.
   const handleCanvasPointerDown = (event) => {
-    if (!event.shiftKey) setSelectedIds(new Set())
-    handlePanPointerDown(event)
+    if (event.button === 1) {
+      gestureModeRef.current = 'pan'
+      handlePanPointerDown(event)
+    } else if (event.button === 0) {
+      gestureModeRef.current = 'select'
+      handleSelectPointerDown(event)
+    }
+  }
+
+  const handleCanvasPointerMove = (event) => {
+    if (gestureModeRef.current === 'pan') handlePanPointerMove(event)
+    else if (gestureModeRef.current === 'select') handleSelectPointerMove(event)
+  }
+
+  const handleCanvasPointerUp = (event) => {
+    if (gestureModeRef.current === 'pan') handlePanPointerUp(event)
+    else if (gestureModeRef.current === 'select') handleSelectPointerUp(event)
+    gestureModeRef.current = null
   }
 
   const handleRoomDoubleClick = (event, roomBox) => {
@@ -152,18 +179,29 @@ function RoomCanvas({ rooms }) {
         className={`canvas${isPanning ? ' canvas--panning' : ''}`}
         ref={containerRef}
         onPointerDown={handleCanvasPointerDown}
-        onPointerMove={handlePanPointerMove}
-        onPointerUp={handlePanPointerUp}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={handleCanvasPointerUp}
       >
         {roomBoxes.length === 0 && <p className="canvas-empty">Load a file to see your rooms.</p>}
-        {/* Pan handlers live on this outer, never-scaled .canvas element
-           rather than .canvas-content below: a CSS-transformed element's own
-           hit-test box shrinks/grows with its visual scale, so panning would
-           stop registering past its shrunk edges once zoomed out. */}
+        {/* Pan/select handlers live on this outer, never-scaled .canvas
+           element rather than .canvas-content below: a CSS-transformed
+           element's own hit-test box shrinks/grows with its visual scale, so
+           these gestures would stop registering past its shrunk edges once
+           zoomed out. */}
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
         >
+          {selectionRect && (
+            <div
+              className="selection-rect"
+              style={{
+                width: selectionRect.width,
+                height: selectionRect.height,
+                transform: `translate(${selectionRect.x}px, ${selectionRect.y}px)`,
+              }}
+            />
+          )}
           <svg className="canvas-lines">
             {connections.map((connection) => (
               <line
