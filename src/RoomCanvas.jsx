@@ -23,6 +23,7 @@ function RoomCanvas({ rooms }) {
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
@@ -158,9 +159,55 @@ function RoomCanvas({ rooms }) {
 
   const handleExportJson = () => {
     downloadFile(JSON.stringify(roomBoxes, null, 2), 'room-layout.json', 'application/json')
+  }
+
+  // Proper React component for the add-room menu. Hooks are allowed here.
+  function AddRoomMenu({ onAdd, onClose }) {
+    const [roomName, setRoomName] = useState('')
+    const [targetArea, setTargetArea] = useState('')
+    const [minWidth, setMinWidth] = useState('')
+
+    const handleSubmit = (e) => {
+      e.preventDefault()
+      const area = Number.parseFloat(targetArea) || 1
+      const id = `room-${Date.now()}`
+      // Simple default size based on area; tweak as needed.
+      const sizePx = Math.max(40, Math.sqrt(area) * scale)
+      const newRoom = {
+        id,
+        roomName: roomName || `Room ${id}`,
+        targetArea: area,
+        area,
+        width: sizePx,
+        height: sizePx,
+        x: 20,
+        y: 20,
+        minWidth: Number.isFinite(Number(minWidth)) ? Number(minWidth) : undefined,
+        adjacentRooms: {}, // Add this — empty object for no adjacency rules
+        color: undefined, // Optional: add color support later
+      }
+      onAdd(newRoom)
+      onClose()
     }
 
-
+    return (
+      <div
+        className="add_room_menu"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
+      >
+        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
+          <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} />
+          <input type="number" placeholder="Target Area" value={targetArea} onChange={(e) => setTargetArea(e.target.value)} />
+          <input type="number" placeholder="Min Width" value={minWidth} onChange={(e) => setMinWidth(e.target.value)} />
+          <button type="submit">Add</button>
+          <button type="button" onClick={onClose}>Cancel</button>
+        </form>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -172,8 +219,7 @@ function RoomCanvas({ rooms }) {
           <button type="button" className="export-button" onClick={handleExportJson}>
             Save layout file (.json)
           </button>
-              </div>
-
+        </div>
       )}
       <div
         className={`canvas${isPanning ? ' canvas--panning' : ''}`}
@@ -183,11 +229,45 @@ function RoomCanvas({ rooms }) {
         onPointerUp={handleCanvasPointerUp}
       >
         {roomBoxes.length === 0 && <p className="canvas-empty">Load a file to see your rooms.</p>}
-        {/* Pan/select handlers live on this outer, never-scaled .canvas
-           element rather than .canvas-content below: a CSS-transformed
-           element's own hit-test box shrinks/grows with its visual scale, so
-           these gestures would stop registering past its shrunk edges once
-           zoomed out. */}
+
+        
+
+        <button
+          className="add_room_button"
+          onPointerDown={(e) => {
+            e.stopPropagation()
+
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+
+            setShowAddRoomMenu(true)
+
+          }}
+          style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+        >
+          +
+        </button>
+
+
+        {showAddRoomMenu && (
+          <>
+
+
+            <AddRoomMenu
+              onAdd={(newRoom) => {
+
+                recordHistory()
+                setRoomBoxes((prev) => [...prev, newRoom])
+              }}
+              onClose={() => {
+
+                setShowAddRoomMenu(false)
+              }}
+            />
+          </>
+        )}
+
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
@@ -196,9 +276,13 @@ function RoomCanvas({ rooms }) {
             <div
               className="selection-rect"
               style={{
+                left: selectionRect.x,
+                top: selectionRect.y,
                 width: selectionRect.width,
                 height: selectionRect.height,
-                transform: `translate(${selectionRect.x}px, ${selectionRect.y}px)`,
+                position: 'absolute',
+                pointerEvents: 'none',
+                zIndex: 5,
               }}
             />
           )}
@@ -246,15 +330,17 @@ function RoomCanvas({ rooms }) {
                 onPointerUp={(event) => handleResizePointerUp(event, roomBox.id)}
               >
                 <svg
-                  className="room-card__resize-icon"
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                          className="room-card__resize-icon"
+                          viewBox="0 0 24 24"
+                          width="14"
+                          height="14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          
+
                 >
                   <path d="M3 12H21M3 12L7 8M3 12L7 16M21 12L17 8M21 12L17 16" />
                 </svg>
@@ -312,3 +398,6 @@ function RoomCanvas({ rooms }) {
 }
 
 export default RoomCanvas
+
+// This confirms if React is loaded and working
+console.log(document.querySelector('.add_room_button'))

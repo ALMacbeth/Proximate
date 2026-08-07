@@ -68,7 +68,6 @@
     border-radius: 12px;
     box-sizing: border-box;
     overflow: hidden;
-    cursor: grab;
     touch-action: none;
     user-select: none;
 }
@@ -230,8 +229,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 3px;
-    background: var(--accent-bg);
-    color: var(--text);
+    background: var(--accent-border);
+    color: var(--border);
     cursor: ew-resize;
     touch-action: none;
     &:hover {
@@ -240,5 +239,31 @@
 }
 
 .room-card__resize-icon {
-  pointer-events: none;
+    pointer-events: none;
+}
+
+.add_room_button {
+    position: absolute;
+    right: 5px;
+    top: 5px;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: inherit;
+}
+
+.add_room_menu {
+    position: absolute;
+    top: 40px;
+    right: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
 }

@@ -29,6 +29,8 @@ function extractFillColor(cell) {
     return `#${rgb.slice(-6)}`
 }
 
+
+
 function parseLayoutJson(text) {
     let data
     try {
@@ -96,6 +98,8 @@ function parseWorkbook(arrayBuffer) {
         })
     return rooms
 }
+
+
 
 function App() {
     const [rooms, setRooms] = useState({})
