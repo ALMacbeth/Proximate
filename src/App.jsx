@@ -169,7 +169,7 @@ function App() {
     return (
         <section id="center">
             <div>
-                <h1 style={{ fontSize: '1.5rem' }}>Room Schedule Import</h1>
+                <h1 style={{ fontSize: '1.5rem' }}>PROXIMATE</h1>
                 {fileName && !error && (
                     <p className="filename">
                         Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
@@ -180,8 +180,10 @@ function App() {
 
                 )}
                 {fileDropToggle && (
-                    <p style={{ fontSize:"12px" }}>
-                        Drop an Excel file with <code style={{ fontSize: "12px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "12px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "12px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
+                    <p style={{ fontSize: "12px" }}>
+                        Quickly generate layout diagrams from area schedules!<br>
+                        </br><br>
+                        </br>Drop an Excel file with <code style={{ fontSize: "12px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "12px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "12px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
                         </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "12px" }}>{"Other Room Name : Max Distance"}</code><br>
                         </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "12px" }}>{","}</code>)<br>
                         </br>If needed, you can add a <code style={{ fontSize: "12px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
