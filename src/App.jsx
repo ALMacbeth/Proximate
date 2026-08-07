@@ -173,7 +173,7 @@ function App() {
     return (
         <section id="center">
             <div>
-                <h1 style={{ fontSize: '1.5rem' }}>Room Schedule Import</h1>
+                <h1 style={{ fontSize: '1.5rem' }}>PROXIMATE</h1>
                 {fileName && !error && (
                     <p className="filename">
                         Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
