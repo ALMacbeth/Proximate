@@ -70,7 +70,7 @@ function parseWorkbook(arrayBuffer) {
 
     if (roomNameIndex === -1 || targetAreaIndex === -1 || adjacentRoomsIndex === -1) {
         throw new Error(
-            `Unable to load room data - Please ensure your file contains the following required column headers: "${ROOM_NAME_HEADER}", "${TARGET_AREA_HEADER}" and "${ADJACENT_ROOMS_HEADER}".`,
+            `Unable to load room data - Please ensure your file contains the following required column headers: "${ROOM_NAME_HEADER}", "${TARGET_AREA_HEADER}" and "${ADJACENT_ROOMS_HEADER}".`, 
         )
     }
 
@@ -180,8 +180,10 @@ function App() {
 
                 )}
                 {fileDropToggle && (
-                    <p style={{ fontSize:"14px" }}>
-                        Drop an Excel file with <code style={{ fontSize: "14px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "14px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "14px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
+                    <p style={{ fontSize: "14px" }}>
+                    Quickly generate layout diagrams from area schedules!<br>
+                    </br><br>
+                        </br>Drop an Excel file with <code style={{ fontSize: "14px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "14px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "14px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
                         </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "14px" }}>{"Other Room Name : Max Distance"}</code><br>
                         </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "14px" }}>{","}</code>)<br>
                         </br>If needed, you can add a <code style={{ fontSize: "14px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
@@ -220,7 +222,11 @@ function App() {
             )}
 
             
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error">{error}
+            <br>
+                </br><button
+                onClick={() => setDropToggle(true) }>Upload a new file
+            </button></p>}
 
             {!fileDropToggle && <RoomCanvas rooms={roomList} />}
         </section>
