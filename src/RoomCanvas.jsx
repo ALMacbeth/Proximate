@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { buildDxf } from './dxfExport.js'
 import { downloadFile } from './download.js'
 import {
@@ -115,6 +115,29 @@ function RoomCanvas({ rooms }) {
     }
   }
 
+  const deleteSelectedRooms = () => {
+    if (selectedIds.size === 0) return
+    recordHistory()
+    setRoomBoxes((prev) => prev.filter((box) => !selectedIds.has(box.id)))
+    setSelectedIds(new Set())
+  }
+
+  // Delete/Backspace removes the current selection, unless a text field
+  // (e.g. the width-edit input) is focused â€” matching the same "don't hijack
+  // text editing" guard useUndoHistory.js already uses for Ctrl+Z.
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      const target = event.target
+      const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      if (isEditingText) return
+      deleteSelectedRooms()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  })
+
   const handleCanvasPointerMove = (event) => {
     if (gestureModeRef.current === 'pan') handlePanPointerMove(event)
     else if (gestureModeRef.current === 'select') handleSelectPointerMove(event)
@@ -169,10 +192,11 @@ function RoomCanvas({ rooms }) {
 
     const handleSubmit = (e) => {
       e.preventDefault()
-      const area = Number.parseFloat(targetArea) || 1
+        const area = Math.max(targetArea, 0) * scale * scale || 1
+        
       const id = `room-${Date.now()}`
       // Simple default size based on area; tweak as needed.
-      const sizePx = Math.max(40, Math.sqrt(area) * scale)
+      const sizePx = Math.max(40, Math.sqrt(area))
       const newRoom = {
         id,
         roomName: roomName || `Room ${id}`,
@@ -182,8 +206,9 @@ function RoomCanvas({ rooms }) {
         height: sizePx,
         x: 20,
         y: 20,
-        minWidth: Number.isFinite(Number(minWidth)) ? Number(minWidth) : undefined,
-        adjacentRooms: {}, // Add this — empty object for no adjacency rules
+
+          minWidth: Number.isFinite(Number(minWidth)) ? Number(minWidth) : undefined,
+        adjacentRooms: {}, // Add this ï¿½ empty object for no adjacency rules
         color: undefined, // Optional: add color support later
       }
       onAdd(newRoom)
@@ -267,11 +292,11 @@ function RoomCanvas({ rooms }) {
             />
           </>
         )}
-
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
         >
+                  
           {selectionRect && (
             <div
               className="selection-rect"
