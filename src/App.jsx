@@ -108,6 +108,7 @@ function App() {
     const [isDragging, setIsDragging] = useState(false)
     const fileInputRef = useRef(null)
     const [fileDropToggle, setDropToggle] = useState(true)
+    const [infoToggle, setInfoToggle] = useState(false)
 
     const handleFile = useCallback((file) => {
         if (!file) return
@@ -173,7 +174,7 @@ function App() {
     return (
         <section id="center">
             <div>
-                <h1 style={{ fontSize: '1.5rem' }}>PROXIMATE</h1>
+                <h1 >PROXIMATE</h1>
                 {fileName && !error && (
                     <p className="filename">
                         Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
@@ -184,9 +185,15 @@ function App() {
 
                 )}
                 {fileDropToggle && (
+                    <p style={{ fontSize: "18px" }}>
+                        Quickly generate layout diagrams from area schedules<br></br>
+                        <button onClick={() => setInfoToggle(!infoToggle)}>{infoToggle ? 'Hide Instructions' : 'Show Instructions'}</button>
+                    </p>
+                    
+                )}
+                {infoToggle && fileDropToggle &&(
                     <p style={{ fontSize: "14px" }}>
-                    Quickly generate layout diagrams from area schedules!<br>
-                    </br><br>
+                        <br>
                         </br>Drop an Excel file with <code style={{ fontSize: "14px" }}>{ROOM_NAME_HEADER}</code>, <code style={{ fontSize: "14px" }}>{TARGET_AREA_HEADER}</code> and{' '} <code style={{ fontSize: "14px" }}>{ADJACENT_ROOMS_HEADER}</code> columns headings to import<br>
                         </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "14px" }}>{"Other Room Name : Max Distance"}</code><br>
                         </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "14px" }}>{","}</code>)<br>

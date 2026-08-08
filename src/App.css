@@ -275,6 +275,18 @@
     color: var(--text);
     font-size: inherit;
 }
+.add_connection_button {
+    position: absolute;
+    right: 5px;
+    top: 5px;
+    width:fit-content;
+    height: 32px;
+    justify-content: center;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: inherit;
+}
 
 .add_room_menu {
     position: absolute;

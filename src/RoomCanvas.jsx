@@ -17,7 +17,36 @@ import { useRoomResize } from './useRoomResize.js'
 import { useUndoHistory } from './useUndoHistory.js'
 import { useDragSelect } from './useDragSel.js'
 
+function AddNewConnection({ onApply, onClose }) {
+    const [toRoomId, setToRoomId] = useState('')
+    const [maxDistance, setMaxDistance] = useState(1)
+    const applyNewConnections = (e) => {
+        e.preventDefault() // stop the native form submit from reloading the page
+        onApply({ toRoomName: toRoomId, maxDistance: Number(maxDistance) })
+        onClose()
+    }
 
+
+    return (
+        <div
+            className="add_connection_menu"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+
+            style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
+        >
+            <form onSubmit={applyNewConnections} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
+                <p fontSize="12px" >The currently selected rooms will be linked with:</p>
+                <input type="text" placeholder="Target Room Name" value={toRoomId} onChange={(e) => setToRoomId(e.target.value)} />
+                <p fontSize="12px" >The maximum allowed seperation (m):</p>
+                <input type="number" placeholder="Max Distance" value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} />
+                <button type="submit">Connect</button>
+                <button type="button" onClick={onClose}>Cancel</button>
+
+            </form>
+        </div>)
+}
 
 // Proper React component for the add-room menu. Hooks are allowed here.
 function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
@@ -26,7 +55,6 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
     const [minWidth, setMinWidth] = useState('')
     const [color, setColor] = useState('')
     const [showColorSwatches, setShowColorSwatches] = useState(false)
-    const colorInputRef = useRef(null)
     const [showCustomPicker, setShowCustomPicker] = useState(false)
     const [draftColor, setDraftColor] = useState('#000000')
 
@@ -36,13 +64,13 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
     }
 
 
-    const handleAccept = () => {
+    const handleAcceptSwatch = () => {
         setColor(draftColor)
         setShowCustomPicker(false)
         setShowColorSwatches(false);
 
     }
-    const handleSubmit = (e) => {
+    const handleSubmitNewRoom = (e) => {
         e.preventDefault()
         const targetAreaMeters = Number.parseFloat(targetArea) || 1
         const area = targetAreaMeters * scale * scale
@@ -78,7 +106,7 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
             onPointerUp={(e) => e.stopPropagation()}
             style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
         >
-            <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
+            <form onSubmit={handleSubmitNewRoom} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
                 <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} />
                 <input type="number" placeholder="Target Area" value={targetArea} onChange={(e) => setTargetArea(e.target.value)} />
                 <input type="number" placeholder="Min Width" value={minWidth} onChange={(e) => setMinWidth(e.target.value)} />
@@ -111,7 +139,7 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
                             {showCustomPicker && (
                                 <div className="custom-picker-panel" style={{ position: 'absolute', top: '100%' }}>
                                     <HexColorPicker color={draftColor} onChange={setDraftColor} />
-                                    <button onClick={handleAccept}>Accept</button>
+                                    <button onClick={handleAcceptSwatch}>Accept</button>
                                     <button onClick={() => setShowCustomPicker(false)}>Cancel</button>
                                 </div>
                             )}
@@ -135,7 +163,8 @@ function RoomCanvas({ rooms }) {
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
-    const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
+  const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
+  const [showAddConnectionMenu, setShowAddConnectionMenu] = useState(false)
     
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
@@ -235,9 +264,7 @@ function RoomCanvas({ rooms }) {
     setSelectedIds(new Set())
   }
 
-  // Delete/Backspace removes the current selection, unless a text field
-  // (e.g. the width-edit input) is focused — matching the same "don't hijack
-  // text editing" guard useUndoHistory.js already uses for Ctrl+Z.
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
@@ -295,7 +322,9 @@ function RoomCanvas({ rooms }) {
 
   const handleExportJson = () => {
     downloadFile(JSON.stringify(roomBoxes, null, 2), 'room-layout.json', 'application/json')
-  }
+    }
+
+
 
 
 
@@ -324,22 +353,39 @@ function RoomCanvas({ rooms }) {
 
         
 
-        <button
-          className="add_room_button"
-          onPointerDown={(e) => {
-            e.stopPropagation()
+              <button
+                  className="add_room_button"
+                  onPointerDown={(e) => {
+                      e.stopPropagation()
 
-          }}
-          onClick={(e) => {
-            e.stopPropagation()
+                  }}
+                  onClick={(e) => {
+                      e.stopPropagation()
 
-            setShowAddRoomMenu(true)
+                      setShowAddRoomMenu(true)
 
-          }}
-          style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
-        >
-          +
-        </button>
+                  }}
+                  style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+              >
+                  +
+              </button>
+              {selectedIds.size > 0 && (
+                  <button
+                      className="add_connection_button"
+                      onPointerDown={(e) => {
+                          e.stopPropagation()
+
+                      }}
+                      onClick={(e) => {
+                          e.stopPropagation()
+
+                          setShowAddConnectionMenu(true)
+
+                      }}
+                      style={{ fontSize:"14px", position: 'absolute', top: 12, left: 12, zIndex: 10 }}
+                  >
+                      Add a connection to the selected {selectedIds.size>1 ? 'rooms' : 'room'}
+                  </button>)}
 
 
         {showAddRoomMenu && (
@@ -360,7 +406,25 @@ function RoomCanvas({ rooms }) {
               }}
             />
           </>
-        )}
+              )}
+
+              {showAddConnectionMenu && (
+                  <AddNewConnection
+                      onApply={({ toRoomName, maxDistance }) => {
+                          recordHistory()
+                          setRoomBoxes((prev) =>
+                              prev.map((box) =>
+                                  selectedIds.has(box.id)
+                                      ? { ...box, adjacentRooms: { ...box.adjacentRooms, [toRoomName]: maxDistance } }
+                                      : box,
+                              ),
+                          )
+                      }}
+                      onClose={() => setShowAddConnectionMenu(false)}
+                  />
+              )}
+
+
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
@@ -492,6 +556,3 @@ function RoomCanvas({ rooms }) {
 }
 
 export default RoomCanvas
-
-// This confirms if React is loaded and working
-console.log(document.querySelector('.add_room_button'))
