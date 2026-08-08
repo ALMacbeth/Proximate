@@ -23,6 +23,27 @@
   gap: 8px;
 }
 
+.color-swatches {
+  display: flex;
+  
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+}
+
+.color-swatch--selected {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .dropzone {
   width: 100%;
   max-width: 480px;

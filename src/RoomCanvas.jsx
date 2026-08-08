@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { HexColorPicker } from 'react-colorful'
 import { buildDxf } from './dxfExport.js'
 import { downloadFile } from './download.js'
 import {
@@ -16,6 +17,117 @@ import { useRoomResize } from './useRoomResize.js'
 import { useUndoHistory } from './useUndoHistory.js'
 import { useDragSelect } from './useDragSel.js'
 
+
+
+// Proper React component for the add-room menu. Hooks are allowed here.
+function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
+    const [roomName, setRoomName] = useState('')
+    const [targetArea, setTargetArea] = useState('')
+    const [minWidth, setMinWidth] = useState('')
+    const [color, setColor] = useState('')
+    const [showColorSwatches, setShowColorSwatches] = useState(false)
+    const colorInputRef = useRef(null)
+    const [showCustomPicker, setShowCustomPicker] = useState(false)
+    const [draftColor, setDraftColor] = useState('#000000')
+
+    const swatchColorSelected = (swatch) => {
+        setColor(swatch);
+        setShowColorSwatches(false);
+    }
+
+
+    const handleAccept = () => {
+        setColor(draftColor)
+        setShowCustomPicker(false)
+        setShowColorSwatches(false);
+
+    }
+    const handleSubmit = (e) => {
+        e.preventDefault()
+        const targetAreaMeters = Number.parseFloat(targetArea) || 1
+        const area = targetAreaMeters * scale * scale
+
+        const id = `room-${Date.now()}`
+        // Simple default size based on area; tweak as needed.
+        const sizePx = Math.max(40, Math.sqrt(area))
+        const newRoom = {
+            id,
+            roomName: roomName || `Room ${id}`,
+            targetArea: targetAreaMeters,
+            area,
+            width: sizePx,
+            height: sizePx,
+            x: 20,
+            y: 20,
+
+            minWidth: Number.isFinite(Number(minWidth)) ? Number(minWidth) : undefined,
+            adjacentRooms: {}, // Add this � empty object for no adjacency rules
+            color: color || undefined,
+        }
+        onAdd(newRoom)
+        onClose()
+    }
+
+
+
+    return (
+        <div
+            className="add_room_menu"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
+        >
+            <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
+                <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} />
+                <input type="number" placeholder="Target Area" value={targetArea} onChange={(e) => setTargetArea(e.target.value)} />
+                <input type="number" placeholder="Min Width" value={minWidth} onChange={(e) => setMinWidth(e.target.value)} />
+                <span style={{ position: 'relative', display: 'inline-block' }}>
+                <button
+                    type="button"
+                    className={`color-swatch${color === color ? ' color-swatch--selected' : ''}`}
+                    style={{ backgroundColor: color }}
+
+                    onClick={() => setShowColorSwatches(true)}
+                />
+                {existingColors.length > 0 && showColorSwatches && (
+                    <div className="color-swatches" style={{ position: 'absolute', top: '100%', display:'flex' , gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
+                        {existingColors.map((swatch) => (
+                            <button
+                                key={swatch}
+                                type="button"
+                                className={`color-swatch${color === swatch ? ' color-swatch--selected' : ''}`}
+                                style={{ backgroundColor: swatch }}
+                                aria-pressed={color === swatch}
+                                aria-label={`Use color ${swatch}`}
+                                onClick={() => swatchColorSelected(swatch)}
+                            />
+                            
+                        ))}
+                            <button type="button" onClick={() => setShowCustomPicker(true)}>
+                                New
+                            </button>
+
+                            {showCustomPicker && (
+                                <div className="custom-picker-panel" style={{ position: 'absolute', top: '100%' }}>
+                                    <HexColorPicker color={draftColor} onChange={setDraftColor} />
+                                    <button onClick={handleAccept}>Accept</button>
+                                    <button onClick={() => setShowCustomPicker(false)}>Cancel</button>
+                                </div>
+                            )}
+
+                        </div>
+
+                    
+                    )}
+                </span>
+                <button type="submit">Add Room</button>
+                <button type="button" onClick={onClose}>Cancel</button>
+            </form>
+        </div>
+    )
+}
+
 function RoomCanvas({ rooms }) {
   const containerRef = useRef(null)
   const gestureModeRef = useRef(null)
@@ -23,7 +135,8 @@ function RoomCanvas({ rooms }) {
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
-  const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
+    const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
+    
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
@@ -184,55 +297,9 @@ function RoomCanvas({ rooms }) {
     downloadFile(JSON.stringify(roomBoxes, null, 2), 'room-layout.json', 'application/json')
   }
 
-  // Proper React component for the add-room menu. Hooks are allowed here.
-  function AddRoomMenu({ onAdd, onClose }) {
-    const [roomName, setRoomName] = useState('')
-    const [targetArea, setTargetArea] = useState('')
-    const [minWidth, setMinWidth] = useState('')
 
-    const handleSubmit = (e) => {
-      e.preventDefault()
-        const area = Math.max(targetArea, 0) * scale * scale || 1
-        
-      const id = `room-${Date.now()}`
-      // Simple default size based on area; tweak as needed.
-      const sizePx = Math.max(40, Math.sqrt(area))
-      const newRoom = {
-        id,
-        roomName: roomName || `Room ${id}`,
-        targetArea: area,
-        area,
-        width: sizePx,
-        height: sizePx,
-        x: 20,
-        y: 20,
 
-          minWidth: Number.isFinite(Number(minWidth)) ? Number(minWidth) : undefined,
-        adjacentRooms: {}, // Add this � empty object for no adjacency rules
-        color: undefined, // Optional: add color support later
-      }
-      onAdd(newRoom)
-      onClose()
-    }
-
-    return (
-      <div
-        className="add_room_menu"
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerMove={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
-      >
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
-          <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} />
-          <input type="number" placeholder="Target Area" value={targetArea} onChange={(e) => setTargetArea(e.target.value)} />
-          <input type="number" placeholder="Min Width" value={minWidth} onChange={(e) => setMinWidth(e.target.value)} />
-          <button type="submit">Add</button>
-          <button type="button" onClick={onClose}>Cancel</button>
-        </form>
-      </div>
-    )
-  }
+  
 
   return (
     <>
@@ -279,7 +346,9 @@ function RoomCanvas({ rooms }) {
           <>
 
 
-            <AddRoomMenu
+                      <AddRoomMenu
+                          scale={scale}
+              existingColors={[...new Set(roomBoxes.map((box) => box.color).filter(Boolean))]}
               onAdd={(newRoom) => {
 
                 recordHistory()
