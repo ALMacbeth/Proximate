@@ -162,7 +162,8 @@ function RoomCanvas({ rooms }) {
   const [roomBoxes, setRoomBoxes] = useState([])
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
-  const [editValue, setEditValue] = useState('')
+    const [editValue, setEditValue] = useState('')
+    const [editAreaValue, setEditAreaValue] = useState('')
   const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
   const [showAddConnectionMenu, setShowAddConnectionMenu] = useState(false)
     
@@ -293,7 +294,8 @@ function RoomCanvas({ rooms }) {
     event.stopPropagation()
     if (editingId === roomBox.id) return
     setEditingId(roomBox.id)
-    setEditValue((roomBox.width / scale).toFixed(2))
+      setEditValue((roomBox.width / scale).toFixed(2))
+      setEditAreaValue((roomBox.area / (scale * scale)).toFixed(2))
   }
 
   const commitWidthEdit = (id) => {
@@ -310,7 +312,33 @@ function RoomCanvas({ rooms }) {
       )
     }
     setEditingId(null)
-  }
+    }
+
+    const commitAreaEdit = (id) => {
+        const areaMeters = parseFloat(editAreaValue)
+        if (Number.isFinite(areaMeters) && areaMeters > 0) {
+            recordHistory()
+            setRoomBoxes((prev) =>
+                prev.map((box) => {
+                    if (box.id !== id) return box
+
+                    const area = areaMeters * scale * scale
+                    // Maintain whatever width is currently shown in the width
+                    // input (falling back to the room's existing width if that
+                    // field hasn't been touched), and derive height from the
+                    // new area — same area/minWidth-bounded math already used
+                    // for the resize handle, just solving for height instead.
+                    const widthMeters = parseFloat(editValue)
+                    const desiredWidth = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters * scale : box.width
+                    const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
+                    const { width, height } = clampWidthToArea(desiredWidth, area, minWidthPx)
+
+                    return { ...box, targetArea: areaMeters, area, width, height }
+                }),
+            )
+        }
+        setEditingId(null)
+    }
 
   const connections = computeConnections(roomBoxes, scale)
   const violatedIds = new Set(connections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
@@ -525,7 +553,27 @@ function RoomCanvas({ rooms }) {
               }}
             >
               <span className="room-card__name">{roomBox.roomName}</span>
-              {editingId === roomBox.id ? (
+                  {editingId === roomBox.id ? (
+                      <div>
+                      <>
+                  <label className="room-card__dimension-label">
+                  Set Area:
+                  <input
+                    type="number"
+                    className="room-card__area-input"
+                    value={editAreaValue}
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    onChange={(event) => setEditAreaValue(event.target.value)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') commitWidthEdit(roomBox.id), commitAreaEdit(roomBox.id)
+                      if (event.key === 'Escape') setEditingId(null)
+                    }}
+                  />
+                </label>
                 <label className="room-card__dimension-label">
                   Set width:
                   <input
@@ -534,16 +582,19 @@ function RoomCanvas({ rooms }) {
                     value={editValue}
                     step="0.01"
                     min="0"
-                    autoFocus
                     onChange={(event) => setEditValue(event.target.value)}
                     onPointerDown={(event) => event.stopPropagation()}
-                    onBlur={() => commitWidthEdit(roomBox.id)}
+                    
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter') commitWidthEdit(roomBox.id)
+                        if (event.key === 'Enter') {
+                            commitWidthEdit(roomBox.id), commitAreaEdit(roomBox.id)
+                        }
                       if (event.key === 'Escape') setEditingId(null)
                     }}
                   />
                 </label>
+                      </>
+                </div>
               ) : (
                 <span className="room-card__area">{formatDimensions(roomBox, scale)}</span>
               )}
