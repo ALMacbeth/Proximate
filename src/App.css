@@ -193,8 +193,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 6px;
+  gap: 0.1em;
+  padding: 0.4em;
   box-sizing: border-box;
   color: var(--text-h);
   text-align: center;
@@ -209,20 +209,21 @@
 .room-card__name {
   font-weight: 500;
   text-align: center;
-  line-height: 1.2;
+  line-height: 1;
   overflow-wrap: break-word;
 }
 
 .room-card__area {
-  font-size: 0.85em;
-  opacity: 0.75;
+    line-height: 1;
+    font-size: 0.85em;
+    opacity: 0.75;
 }
 
 .room-card__dimension-label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 0.15em;
   font-size: 0.8em;
   opacity: 0.75;
 }
@@ -236,7 +237,7 @@
   background: var(--bg);
   border: 1px solid var(--accent-border);
   border-radius: 4px;
-  padding: 1px 4px;
+  padding: 0.1em 0.3em;
   cursor: text;
 }
 
@@ -249,7 +250,7 @@
     background: var(--bg);
     border: 1px solid var(--accent-border);
     border-radius: 4px;
-    padding: 1px 4px;
+    padding: 0.1em 0.3em;
     cursor: text;
 }
 
