@@ -11,11 +11,26 @@ import {
   formatDimensions,
   getContrastTextColor,
 } from './geometry.js'
+import {
+  computeEdgeOffsetPolygon,
+  computeJunctionFill,
+  computeNodeDegrees,
+  computeCorridorRoomSnapCandidates,
+  resolveCorridorTopology,
+} from './corridorGeometry.js'
 import { usePanZoom } from './usePanZoom.js'
 import { useRoomDrag } from './useRoomDrag.js'
 import { useRoomResize } from './useRoomResize.js'
 import { useUndoHistory } from './useUndoHistory.js'
 import { useDragSelect } from './useDragSel.js'
+import { useCorridorDraw } from './useCorridorDraw.js'
+import { useCorridorDrag } from './useCorridorDrag.js'
+import { CorridorWidthPrompt } from './CorridorMenus.jsx'
+import { UnderlayScalePrompt } from './UnderlayMenus.jsx'
+import { renderPdfFirstPageToImage, pointsToMeters } from './pdfUnderlay.js'
+
+const NODE_HIT_RADIUS_SCREEN_PX = 10
+const PDF_FILE_PATTERN = /\.pdf$/i
 
 function AddNewConnection({ onApply, onClose }) {
     const [toRoomId, setToRoomId] = useState('')
@@ -156,7 +171,7 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
     )
 }
 
-function RoomCanvas({ rooms }) {
+function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges: initialCorridorEdges, initialUnderlayFile }) {
   const containerRef = useRef(null)
   const gestureModeRef = useRef(null)
   const [roomBoxes, setRoomBoxes] = useState([])
@@ -166,12 +181,27 @@ function RoomCanvas({ rooms }) {
     const [editAreaValue, setEditAreaValue] = useState('')
   const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
   const [showAddConnectionMenu, setShowAddConnectionMenu] = useState(false)
-    
+  const [activeTool, setActiveTool] = useState('select')
+  const [corridorNodes, setCorridorNodes] = useState([])
+  const [corridorEdges, setCorridorEdges] = useState([])
+  const [showCorridorWidthPrompt, setShowCorridorWidthPrompt] = useState(false)
+  const [corridorWidthMeters, setCorridorWidthMeters] = useState(null)
+  const [editingCorridorEdgeId, setEditingCorridorEdgeId] = useState(null)
+  const [editingCorridorWidthValue, setEditingCorridorWidthValue] = useState('')
+  const [underlay, setUnderlay] = useState(null)
+  const [pendingUnderlayImage, setPendingUnderlayImage] = useState(null)
+  const [underlayError, setUnderlayError] = useState('')
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
 
-  const { recordHistory, clearHistory } = useUndoHistory(roomBoxes, setRoomBoxes)
+  const { recordHistory, clearHistory } = useUndoHistory({
+    roomBoxes: [roomBoxes, setRoomBoxes],
+    corridorNodes: [corridorNodes, setCorridorNodes],
+    corridorEdges: [corridorEdges, setCorridorEdges],
+  })
+
+  const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale)
 
   const {
     selectedIds,
@@ -186,6 +216,7 @@ function RoomCanvas({ rooms }) {
     getLayoutPointerPosition,
     zoom: view.zoom,
     recordHistory,
+    corridorSnapCandidates,
   })
 
   const {
@@ -199,16 +230,96 @@ function RoomCanvas({ rooms }) {
     scale,
     zoom: view.zoom,
     recordHistory,
+    corridorSnapCandidates,
   })
 
   const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
+
+  const {
+    selectedNodeIds: selectedCorridorNodeIds,
+    setSelectedNodeIds: setSelectedCorridorNodeIds,
+    selectedEdgeIds: selectedCorridorEdgeIds,
+    setSelectedEdgeIds: setSelectedCorridorEdgeIds,
+    handleNodePointerDown: handleCorridorNodePointerDown,
+    handleNodePointerMove: handleCorridorNodePointerMove,
+    handleNodePointerUp: handleCorridorNodePointerUp,
+    handleEdgePointerDown: handleCorridorEdgePointerDown,
+    handleEdgePointerMove: handleCorridorEdgePointerMove,
+    handleEdgePointerUp: handleCorridorEdgePointerUp,
+  } = useCorridorDrag({
+    corridorNodes,
+    setCorridorNodes,
+    corridorEdges,
+    setCorridorEdges,
+    getLayoutPointerPosition,
+    recordHistory,
+  })
 
   const {
     selectionRect,
     handlePointerDown: handleSelectPointerDown,
     handlePointerMove: handleSelectPointerMove,
     handlePointerUp: handleSelectPointerUp,
-  } = useDragSelect({ roomBoxes, selectedIds, setSelectedIds, getLayoutPointerPosition })
+  } = useDragSelect({
+    roomBoxes,
+    selectedIds,
+    setSelectedIds,
+    corridorNodes,
+    corridorEdges,
+    selectedCorridorNodeIds,
+    setSelectedCorridorNodeIds,
+    selectedCorridorEdgeIds,
+    setSelectedCorridorEdgeIds,
+    getLayoutPointerPosition,
+  })
+
+  const clearCorridorSelection = () => {
+    setSelectedCorridorNodeIds(new Set())
+    setSelectedCorridorEdgeIds(new Set())
+  }
+
+  // Shared by the toolbar toggle button and by Escape/Enter (when pressed
+  // with no chain in progress) so both exit the tool identically.
+  const exitCorridorDrawTool = () => {
+    setActiveTool('select')
+    clearCorridorSelection()
+  }
+
+  const {
+    isDrawing: isDrawingCorridor,
+    draftPoints,
+    cursorPoint,
+    placePoint,
+    updateCursor,
+    commitChain,
+    cancelChain,
+  } = useCorridorDraw({
+    activeTool,
+    getLayoutPointerPosition,
+    // Width was already collected up front (before drawing started, via the
+    // showCorridorWidthPrompt flow below), so a finished chain can be turned
+    // straight into real nodes/edges without a second prompt.
+    onCommit: (points) => {
+      recordHistory()
+      const newNodes = points.map((point, index) => ({
+        id: `corridor-node-${Date.now()}-${index}`,
+        x: point.x,
+        y: point.y,
+      }))
+      const newEdges = newNodes.slice(1).map((node, index) => ({
+        id: `corridor-edge-${Date.now()}-${index}`,
+        nodeAId: newNodes[index].id,
+        nodeBId: node.id,
+        widthMeters: corridorWidthMeters,
+      }))
+      const resolved = resolveCorridorTopology([...corridorNodes, ...newNodes], [...corridorEdges, ...newEdges])
+      setCorridorNodes(resolved.nodes)
+      setCorridorEdges(resolved.edges)
+      setCorridorWidthMeters(null)
+      exitCorridorDrawTool()
+    },
+    onExitTool: exitCorridorDrawTool,
+  })
 
   useLayoutEffect(() => {
     // A fresh file (or reset) invalidates any history from whatever was
@@ -218,11 +329,15 @@ function RoomCanvas({ rooms }) {
     if (rooms.length === 0) {
       setRoomBoxes([])
       setScale(1)
+      setCorridorNodes([])
+      setCorridorEdges([])
       resetView()
       return
     }
     const computedScale = computeScale(rooms)
     setScale(computedScale)
+    setCorridorNodes(initialCorridorNodes ?? [])
+    setCorridorEdges(initialCorridorEdges ?? [])
 
     // A previously exported layout JSON already carries x/y/width/height (and
     // area) for every room, so re-importing it should restore that exact
@@ -244,11 +359,64 @@ function RoomCanvas({ rooms }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rooms])
 
+  // With no rooms to derive a scale from, an underlay needs *some* scale to
+  // render at. Deriving it from the underlay's own real-world size (fitting
+  // the whole page into a fixed pixel width) meant any room added
+  // afterward inherited that same scale — and a real, to-scale drawing can
+  // span hundreds of meters, which produces a tiny px-per-meter ratio that
+  // makes every room look microscopic. Use the same px-per-meter a
+  // normally-sized room would get from computeScale instead, so rooms
+  // added later still look reasonable; the underlay itself may then span
+  // many screen-widths, which is what panning/zooming is for.
+  // Only when rooms are empty: once real rooms exist they're the
+  // authoritative source for scale, exactly as a manually-added room never
+  // retroactively rescales an existing loaded layout either.
+  useEffect(() => {
+    if (rooms.length === 0 && underlay) {
+      const REFERENCE_ROOM_AREA_SQM = 20
+      setScale(computeScale([{ targetArea: REFERENCE_ROOM_AREA_SQM }]))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [underlay])
+
+  const processUnderlayFile = async (file) => {
+    setUnderlayError('')
+    try {
+      const rendered = await renderPdfFirstPageToImage(file)
+      setPendingUnderlayImage(rendered)
+    } catch (err) {
+      console.error('Failed to render PDF underlay:', err)
+      setUnderlayError('Could not read that PDF.')
+    }
+  }
+
+  useEffect(() => {
+    if (initialUnderlayFile) processUnderlayFile(initialUnderlayFile)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUnderlayFile])
+
+  const handleCanvasDragOver = (event) => {
+    if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+  }
+
+  const handleCanvasDrop = (event) => {
+    const file = event.dataTransfer.files?.[0]
+    if (!file || !PDF_FILE_PATTERN.test(file.name)) return
+    event.preventDefault()
+    processUnderlayFile(file)
+  }
+
   // Middle-mouse-button drag on empty canvas background pans the view;
-  // left-button drag draws a marquee selection instead. gestureModeRef is
-  // set synchronously here (not via React state) so the move/up handlers
-  // route correctly even before a re-render lands.
+  // left-button drag draws a marquee selection instead, unless the
+  // draw-corridor tool is armed, in which case a left click places the next
+  // chain point instead. gestureModeRef is set synchronously here (not via
+  // React state) so the move/up handlers route correctly even before a
+  // re-render lands.
   const handleCanvasPointerDown = (event) => {
+    if (isDrawingCorridor) {
+      if (event.button === 0) placePoint(event)
+      return
+    }
     if (event.button === 1) {
       gestureModeRef.current = 'pan'
       handlePanPointerDown(event)
@@ -258,6 +426,10 @@ function RoomCanvas({ rooms }) {
     }
   }
 
+  const handleCanvasDoubleClick = () => {
+    if (isDrawingCorridor) commitChain()
+  }
+
   const deleteSelectedRooms = () => {
     if (selectedIds.size === 0) return
     recordHistory()
@@ -265,6 +437,42 @@ function RoomCanvas({ rooms }) {
     setSelectedIds(new Set())
   }
 
+  const deleteSelectedCorridorElements = () => {
+    if (selectedCorridorNodeIds.size === 0 && selectedCorridorEdgeIds.size === 0) return
+    recordHistory()
+
+    // An edge is removed if it was selected directly, or if either of its
+    // endpoint nodes was selected (deleting a node takes its edges with it).
+    const removedEdges = corridorEdges.filter(
+      (edge) =>
+        selectedCorridorEdgeIds.has(edge.id) ||
+        selectedCorridorNodeIds.has(edge.nodeAId) ||
+        selectedCorridorNodeIds.has(edge.nodeBId),
+    )
+    const removedEdgeIds = new Set(removedEdges.map((edge) => edge.id))
+    const survivingEdges = corridorEdges.filter((edge) => !removedEdgeIds.has(edge.id))
+
+    const stillUsed = new Set()
+    survivingEdges.forEach((edge) => {
+      stillUsed.add(edge.nodeAId)
+      stillUsed.add(edge.nodeBId)
+    })
+    const affectedNodeIds = new Set()
+    removedEdges.forEach((edge) => {
+      affectedNodeIds.add(edge.nodeAId)
+      affectedNodeIds.add(edge.nodeBId)
+    })
+
+    setCorridorEdges(survivingEdges)
+    setCorridorNodes((prev) =>
+      prev.filter((node) => {
+        if (selectedCorridorNodeIds.has(node.id)) return false // explicitly deleted
+        if (affectedNodeIds.has(node.id) && !stillUsed.has(node.id)) return false // orphaned by this deletion
+        return true
+      }),
+    )
+    clearCorridorSelection()
+  }
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -272,7 +480,8 @@ function RoomCanvas({ rooms }) {
       const target = event.target
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
       if (isEditingText) return
-      deleteSelectedRooms()
+      if (selectedCorridorNodeIds.size > 0 || selectedCorridorEdgeIds.size > 0) deleteSelectedCorridorElements()
+      else deleteSelectedRooms()
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -280,6 +489,10 @@ function RoomCanvas({ rooms }) {
   })
 
   const handleCanvasPointerMove = (event) => {
+    if (isDrawingCorridor) {
+      updateCursor(event)
+      return
+    }
     if (gestureModeRef.current === 'pan') handlePanPointerMove(event)
     else if (gestureModeRef.current === 'select') handleSelectPointerMove(event)
   }
@@ -323,11 +536,6 @@ function RoomCanvas({ rooms }) {
                     if (box.id !== id) return box
 
                     const area = areaMeters * scale * scale
-                    // Maintain whatever width is currently shown in the width
-                    // input (falling back to the room's existing width if that
-                    // field hasn't been touched), and derive height from the
-                    // new area — same area/minWidth-bounded math already used
-                    // for the resize handle, just solving for height instead.
                     const widthMeters = parseFloat(editValue)
                     const desiredWidth = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters * scale : box.width
                     const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
@@ -343,14 +551,37 @@ function RoomCanvas({ rooms }) {
   const connections = computeConnections(roomBoxes, scale)
   const violatedIds = new Set(connections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
 
+  const nodeById = new Map(corridorNodes.map((node) => [node.id, node]))
+  const nodeDegrees = computeNodeDegrees(corridorEdges)
+  const nodeHitRadius = NODE_HIT_RADIUS_SCREEN_PX / view.zoom
+
+  const handleCorridorEdgeDoubleClick = (event, edge) => {
+    event.stopPropagation()
+    setEditingCorridorEdgeId(edge.id)
+    setEditingCorridorWidthValue(String(edge.widthMeters))
+  }
+
+  const commitCorridorWidthEdit = (id) => {
+    const widthMeters = parseFloat(editingCorridorWidthValue)
+    if (Number.isFinite(widthMeters) && widthMeters > 0) {
+      recordHistory()
+      setCorridorEdges((prev) => prev.map((edge) => (edge.id === id ? { ...edge, widthMeters } : edge)))
+    }
+    setEditingCorridorEdgeId(null)
+  }
+
   const handleExportDxf = () => {
     const dxf = buildDxf({ rooms: roomBoxes, connections, violatedIds, scale })
     downloadFile(dxf, 'room-layout.dxf', 'application/dxf')
   }
 
   const handleExportJson = () => {
-    downloadFile(JSON.stringify(roomBoxes, null, 2), 'room-layout.json', 'application/json')
-    }
+    downloadFile(
+      JSON.stringify({ version: 2, rooms: roomBoxes, corridorNodes, corridorEdges }, null, 2),
+      'room-layout.json',
+      'application/json',
+    )
+  }
 
 
 
@@ -371,15 +602,18 @@ function RoomCanvas({ rooms }) {
         </div>
       )}
       <div
-        className={`canvas${isPanning ? ' canvas--panning' : ''}`}
+        className={`canvas${isPanning ? ' canvas--panning' : ''}${isDrawingCorridor ? ' canvas--drawing-corridor' : ''}`}
         ref={containerRef}
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
+        onDoubleClick={handleCanvasDoubleClick}
+        onDragOver={handleCanvasDragOver}
+        onDrop={handleCanvasDrop}
       >
-        {roomBoxes.length === 0 && <p className="canvas-empty">Load a file to see your rooms.</p>}
+        {roomBoxes.length === 0 && !underlay && <p className="canvas-empty">Load a file to see your rooms.</p>}
 
-        
+
 
               <button
                   className="add_room_button"
@@ -397,6 +631,68 @@ function RoomCanvas({ rooms }) {
               >
                   +
               </button>
+              {underlay && (
+                  <button
+                      className="remove_underlay_button"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                          e.stopPropagation()
+                          recordHistory()
+                          setUnderlay(null)
+                      }}
+                      style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 10 }}
+                  >
+                      Remove underlay
+                  </button>
+              )}
+              {underlayError && (
+                  <p className="underlay_error" style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 10 }}>
+                      {underlayError}
+                  </p>
+              )}
+              {pendingUnderlayImage && (
+                  <UnderlayScalePrompt
+                      onApply={(scaleRatio) => {
+                          recordHistory()
+                          // The real-world size is a multiple of the page's
+                          // own printed size, not of however many pixels it
+                          // was rendered at.
+                          const widthMeters = pointsToMeters(pendingUnderlayImage.pageWidthPoints) * scaleRatio
+                          setUnderlay({ ...pendingUnderlayImage, widthMeters })
+                          setPendingUnderlayImage(null)
+                      }}
+                      onCancel={() => setPendingUnderlayImage(null)}
+                  />
+              )}
+              {roomBoxes.length > 0 && (
+                  <button
+                      className={`add_corridor_button${isDrawingCorridor ? ' add_corridor_button--active' : ''}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                          e.stopPropagation()
+                          if (isDrawingCorridor) {
+                              cancelChain()
+                              exitCorridorDrawTool()
+                          } else {
+                              clearCorridorSelection()
+                              setShowCorridorWidthPrompt(true)
+                          }
+                      }}
+                      style={{ position: 'absolute', top: 12, right: 54, zIndex: 10 }}
+                  >
+                      {isDrawingCorridor ? 'Click to place points, Enter to finish' : 'Add corridor'}
+                  </button>
+              )}
+              {showCorridorWidthPrompt && (
+                  <CorridorWidthPrompt
+                      onApply={(widthMeters) => {
+                          setCorridorWidthMeters(widthMeters)
+                          setShowCorridorWidthPrompt(false)
+                          setActiveTool('draw-corridor')
+                      }}
+                      onCancel={() => setShowCorridorWidthPrompt(false)}
+                  />
+              )}
               {selectedIds.size > 0 && (
                   <button
                       className="add_connection_button"
@@ -452,12 +748,21 @@ function RoomCanvas({ rooms }) {
                   />
               )}
 
-
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
         >
-                  
+          {underlay && (
+            <img
+              src={underlay.dataUrl}
+              alt=""
+              className="canvas-underlay"
+              style={{
+                width: underlay.widthMeters * scale,
+                height: underlay.widthMeters * (underlay.pixelHeight / underlay.pixelWidth) * scale,
+              }}
+            />
+          )}
           {selectionRect && (
             <div
               className="selection-rect"
@@ -494,6 +799,144 @@ function RoomCanvas({ rooms }) {
               />
             ))}
           </svg>
+          <svg className="canvas-corridors">
+            {corridorEdges.map((edge) => {
+              const nodeA = nodeById.get(edge.nodeAId)
+              const nodeB = nodeById.get(edge.nodeBId)
+              if (!nodeA || !nodeB) return null
+              const polygon = computeEdgeOffsetPolygon(nodeA, nodeB, edge.widthMeters * scale)
+              if (!polygon) return null
+              const points = polygon.map((p) => `${p.x},${p.y}`).join(' ')
+              const isSelected = selectedCorridorEdgeIds.has(edge.id)
+              return (
+                <polygon
+                  key={edge.id}
+                  points={points}
+                  className={`corridor-edge${isSelected ? ' corridor-edge--selected' : ''}`}
+                  style={edge.color ? { fill: edge.color } : undefined}
+                  onPointerDown={(event) => {
+                    // While the draw-corridor tool is armed, clicking on top
+                    // of an existing edge must place a new chain point there
+                    // (which splices a connecting node into this edge at
+                    // commit time) rather than grab-selecting the edge — so
+                    // leave the event unhandled and let it bubble up to the
+                    // canvas's placePoint handler instead.
+                    if (isDrawingCorridor) return
+                    handleCorridorEdgePointerDown(event, edge)
+                  }}
+                  onPointerMove={handleCorridorEdgePointerMove}
+                  onPointerUp={handleCorridorEdgePointerUp}
+                  onDoubleClick={(event) => handleCorridorEdgeDoubleClick(event, edge)}
+                />
+              )
+            })}
+            {corridorNodes
+              .filter((node) => (nodeDegrees.get(node.id) || 0) >= 2)
+              .map((node) => {
+                const incidentWidthsPx = corridorEdges
+                  .filter((edge) => edge.nodeAId === node.id || edge.nodeBId === node.id)
+                  .map((edge) => edge.widthMeters * scale)
+                const fill = computeJunctionFill(node, incidentWidthsPx)
+                if (!fill) return null
+                // Purely decorative (pointer-events: none in CSS) — the
+                // dedicated hit-target circle rendered with every node below
+                // handles selection/drag uniformly regardless of degree.
+                return (
+                  <circle
+                    key={`junction-${node.id}`}
+                    cx={fill.cx}
+                    cy={fill.cy}
+                    r={fill.r}
+                    className="corridor-junction-fill"
+                  />
+                )
+              })}
+            {corridorNodes.map((node) => (
+              // A larger invisible hit-target circle, rendered on top of
+              // every edge/junction fill, so a click anywhere near a node
+              // always grabs the node rather than whatever edge happens to
+              // sit underneath it — the visible dot itself stays small and
+              // is purely cosmetic (pointer-events: none; revealed by the
+              // group's own hover, since it can't be hovered directly).
+              <g key={`node-${node.id}`} className="corridor-node-group">
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={nodeHitRadius}
+                  className="corridor-node-hit-target"
+                  onPointerDown={(event) => {
+                    // Same rationale as the edge/junction handlers above:
+                    // while drawing, clicking an existing node should place
+                    // a chain point there (merging into it) rather than
+                    // grab it.
+                    if (isDrawingCorridor) return
+                    handleCorridorNodePointerDown(event, node)
+                  }}
+                  onPointerMove={handleCorridorNodePointerMove}
+                  onPointerUp={handleCorridorNodePointerUp}
+                />
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={5}
+                  className={`corridor-node-handle${
+                    selectedCorridorNodeIds.has(node.id) ? ' corridor-node-handle--selected' : ''
+                  }`}
+                />
+              </g>
+            ))}
+          </svg>
+          {isDrawingCorridor && (
+            <svg className="canvas-corridor-draft">
+              {draftPoints.map((point, index) => {
+                const next = draftPoints[index + 1] || (index === draftPoints.length - 1 ? cursorPoint : null)
+                if (!next) return null
+                return (
+                  <line
+                    key={`draft-segment-${index}`}
+                    x1={point.x}
+                    y1={point.y}
+                    x2={next.x}
+                    y2={next.y}
+                    className="corridor-draft-line"
+                  />
+                )
+              })}
+              {draftPoints.map((point, index) => (
+                <circle key={`draft-point-${index}`} cx={point.x} cy={point.y} r={4} className="corridor-draft-point" />
+              ))}
+            </svg>
+          )}
+          {editingCorridorEdgeId &&
+            (() => {
+              const edge = corridorEdges.find((e) => e.id === editingCorridorEdgeId)
+              const nodeA = edge && nodeById.get(edge.nodeAId)
+              const nodeB = edge && nodeById.get(edge.nodeBId)
+              if (!edge || !nodeA || !nodeB) return null
+              const midX = (nodeA.x + nodeB.x) / 2
+              const midY = (nodeA.y + nodeB.y) / 2
+              return (
+                <div
+                  className="corridor-width-edit"
+                  style={{ position: 'absolute', transform: `translate(${midX}px, ${midY}px)` }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="number"
+                    className="corridor-width-edit__input"
+                    value={editingCorridorWidthValue}
+                    step="0.1"
+                    min="0"
+                    autoFocus
+                    onChange={(event) => setEditingCorridorWidthValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitCorridorWidthEdit(editingCorridorEdgeId)
+                      if (event.key === 'Escape') setEditingCorridorEdgeId(null)
+                    }}
+                  />
+                </div>
+              )
+            })()}
           {roomBoxes.map((roomBox) => (
             <div
               key={roomBox.id}

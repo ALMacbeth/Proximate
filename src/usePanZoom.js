@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
-const MIN_ZOOM = 0.5
+// MIN_ZOOM is low enough to fit a large real-world-scale underlay (a 1:500
+// drawing can span a few thousand px at the app's normal room scale)
+// entirely on screen, not just a typical room layout.
+const MIN_ZOOM = 0.02
 const MAX_ZOOM = 3
 const ZOOM_SPEED = 0.001
 

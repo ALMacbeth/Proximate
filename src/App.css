@@ -97,6 +97,10 @@
   cursor: grabbing;
 }
 
+.canvas--drawing-corridor {
+  cursor: crosshair;
+}
+
 .canvas-empty {
   position: absolute;
   top: 50%;
@@ -112,6 +116,13 @@
   width: 100%;
   height: 100%;
   transform-origin: 0 0;
+}
+
+.canvas-underlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  user-select: none;
 }
 
 .canvas-lines {
@@ -147,6 +158,99 @@
   stroke: #ec4899;
   stroke-width: 1;
   stroke-dasharray: 4 4;
+}
+
+.canvas-corridors {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.canvas-corridor-draft {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.corridor-draft-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.corridor-draft-point {
+  fill: var(--accent);
+}
+
+.corridor-edge {
+  fill: var(--corridor-fill);
+  stroke: rgba(0, 0, 0, 0.25);
+  stroke-width: 1;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.corridor-edge--selected {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.corridor-junction-fill {
+  fill: var(--corridor-fill);
+  pointer-events: none;
+}
+
+.corridor-node-hit-target {
+  fill: transparent;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.corridor-node-handle {
+  fill: var(--bg);
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.corridor-node-group:hover .corridor-node-handle {
+  opacity: 1;
+}
+
+.corridor-node-handle--selected {
+  opacity: 1;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.corridor-width-edit {
+  z-index: 15;
+}
+
+.corridor-width-edit__input {
+  width: 4.5em;
+  font: inherit;
+  font-size: 0.85em;
+  text-align: center;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  cursor: text;
 }
 
 .room-card {
@@ -299,6 +403,53 @@
     background: var(--accent-bg);
     color: var(--text);
     font-size: inherit;
+}
+
+.add_corridor_button {
+    width: fit-content;
+    height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
+    justify-content: center;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: 13px;
+}
+
+.add_corridor_button--active {
+    background: var(--accent);
+    color: var(--bg);
+}
+
+.add_corridor_width_menu {
+    font-size: 15px;
+}
+
+.underlay_scale_menu {
+    font-size: 15px;
+}
+
+.remove_underlay_button {
+    width: fit-content;
+    height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
+    justify-content: center;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: 13px;
+}
+
+.underlay_error {
+    margin: 0;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--bg);
+    color: #e5484d;
+    font-size: 13px;
+    box-shadow: var(--shadow);
 }
 
 .add_room_menu {

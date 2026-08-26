@@ -2,17 +2,24 @@ import { useEffect, useRef } from 'react'
 
 const MAX_HISTORY = 50
 
-// Tracks past `roomBoxes` snapshots for Ctrl/Cmd+Z undo. Callers record a
+// Tracks past snapshots of one or more named state slices for Ctrl/Cmd+Z
+// undo, e.g. useUndoHistory({ roomBoxes: [roomBoxes, setRoomBoxes],
+// corridorNodes: [corridorNodes, setCorridorNodes] }). Callers record a
 // snapshot themselves right before a discrete action (drag, resize, width
 // edit) starts changing state — not on every intermediate update — so one
-// undo step reverts one whole gesture, not one per pointermove frame.
-export function useUndoHistory(roomBoxes, setRoomBoxes) {
+// undo step reverts one whole gesture (across every slice at once, not
+// per-slice) rather than one per pointermove frame.
+export function useUndoHistory(slices) {
   const historyRef = useRef([])
-  const roomBoxesRef = useRef(roomBoxes)
-  roomBoxesRef.current = roomBoxes
+  const slicesRef = useRef(slices)
+  slicesRef.current = slices
 
   const recordHistory = () => {
-    historyRef.current.push(roomBoxesRef.current)
+    const snapshot = {}
+    Object.entries(slicesRef.current).forEach(([key, [value]]) => {
+      snapshot[key] = value
+    })
+    historyRef.current.push(snapshot)
     if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift()
   }
 
@@ -34,12 +41,14 @@ export function useUndoHistory(roomBoxes, setRoomBoxes) {
       const previous = historyRef.current.pop()
       if (!previous) return
       event.preventDefault()
-      setRoomBoxes(previous)
+      Object.entries(slicesRef.current).forEach(([key, [, setValue]]) => {
+        if (key in previous) setValue(previous[key])
+      })
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setRoomBoxes])
+  }, [])
 
   return { recordHistory, clearHistory }
 }

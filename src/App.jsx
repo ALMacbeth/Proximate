@@ -31,20 +31,9 @@ function extractFillColor(cell) {
 
 
 
-function parseLayoutJson(text) {
-    let data
-    try {
-        data = JSON.parse(text)
-    } catch {
-        throw new Error('That file is not valid saved layout file')
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-        throw new Error('The layout file is empty or invalid.')
-    }
-
+function roomsArrayToMap(roomsArray) {
     const rooms = {}
-    data.forEach((room, index) => {
+    roomsArray.forEach((room, index) => {
         if (typeof room?.roomName !== 'string') {
             throw new Error('The layout file does not look like an exported room layout.')
         }
@@ -53,6 +42,33 @@ function parseLayoutJson(text) {
         rooms[id] = rest
     })
     return rooms
+}
+
+function parseLayoutJson(text) {
+    let data
+    try {
+        data = JSON.parse(text)
+    } catch {
+        throw new Error('That file is not valid saved layout file')
+    }
+
+    // Older exports are a bare array of rooms with no corridor data at all;
+    // newer exports wrap rooms alongside corridorNodes/corridorEdges. Both
+    // still load — a corridors-free file just seeds empty corridor arrays.
+    if (Array.isArray(data)) {
+        if (data.length === 0) throw new Error('The layout file is empty or invalid.')
+        return { rooms: roomsArrayToMap(data), corridorNodes: [], corridorEdges: [] }
+    }
+
+    if (!Array.isArray(data?.rooms) || data.rooms.length === 0) {
+        throw new Error('The layout file does not look like an exported room layout.')
+    }
+
+    return {
+        rooms: roomsArrayToMap(data.rooms),
+        corridorNodes: Array.isArray(data.corridorNodes) ? data.corridorNodes : [],
+        corridorEdges: Array.isArray(data.corridorEdges) ? data.corridorEdges : [],
+    }
 }
 
 function parseWorkbook(arrayBuffer) {
@@ -103,6 +119,9 @@ function parseWorkbook(arrayBuffer) {
 
 function App() {
     const [rooms, setRooms] = useState({})
+    const [corridorNodes, setCorridorNodes] = useState([])
+    const [corridorEdges, setCorridorEdges] = useState([])
+    const [underlayFile, setUnderlayFile] = useState(null)
     const [fileName, setFileName] = useState('')
     const [error, setError] = useState('')
     const [isDragging, setIsDragging] = useState(false)
@@ -116,21 +135,45 @@ function App() {
 
         const isExcel = /\.(xlsx|xls)$/i.test(file.name)
         const isLayoutJson = /\.json$/i.test(file.name)
+        const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf'
+
+        // A PDF dropped before any room layout is loaded isn't parsed as
+        // room data at all — it's handed to RoomCanvas as a background
+        // underlay to trace over, with an empty room set so "+" still works.
+        if (isPdf) {
+            setRooms({})
+            setCorridorNodes([])
+            setCorridorEdges([])
+            setUnderlayFile(file)
+            setFileName('')
+            setDropToggle(false)
+            return
+        }
 
         if (!isExcel && !isLayoutJson) {
-            setError('Please upload an Excel file (.xlsx or .xls) or a previously exported layout (.json).')
+            setError('Please upload an Excel file (.xlsx or .xls), a previously exported layout (.json), or a PDF to use as a background underlay.')
             return
         }
 
         const reader = new FileReader()
         reader.onload = (event) => {
             try {
-                const parsed = isLayoutJson ? parseLayoutJson(event.target.result) : parseWorkbook(event.target.result)
-                setRooms(parsed)
+                if (isLayoutJson) {
+                    const parsed = parseLayoutJson(event.target.result)
+                    setRooms(parsed.rooms)
+                    setCorridorNodes(parsed.corridorNodes)
+                    setCorridorEdges(parsed.corridorEdges)
+                } else {
+                    setRooms(parseWorkbook(event.target.result))
+                    setCorridorNodes([])
+                    setCorridorEdges([])
+                }
                 setFileName(file.name)
             } catch (err) {
                 setError(err.message)
                 setRooms({})
+                setCorridorNodes([])
+                setCorridorEdges([])
                 setFileName('')
             }
         }
@@ -221,11 +264,11 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') handleBrowseClick()
                     }}
                 >
-                    <p>Drag &amp; drop an Excel file (or a previously exported layout file) here, or click to browse</p>
+                    <p>Drag &amp; drop an Excel file (or a previously exported layout file) here, or click to browse — a PDF can also be dropped to use as a background underlay</p>
                     <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".xlsx,.xls,.json"
+                        accept=".xlsx,.xls,.json,.pdf"
                         onChange={handleFileInputChange}
                         hidden
                     />
@@ -239,7 +282,14 @@ function App() {
                 onClick={() => setDropToggle(true) }>Upload a new file
             </button></p>}
 
-            {!fileDropToggle && <RoomCanvas rooms={roomList} />}
+            {!fileDropToggle && (
+                <RoomCanvas
+                    rooms={roomList}
+                    corridorNodes={corridorNodes}
+                    corridorEdges={corridorEdges}
+                    initialUnderlayFile={underlayFile}
+                />
+            )}
         </section>
     )
 }

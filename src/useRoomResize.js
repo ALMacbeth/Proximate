@@ -5,9 +5,10 @@ const SNAP_THRESHOLD_PX = 8
 
 // Dragging the resize handle sets a room box's width directly; height is
 // derived via clampWidthToArea to keep the room's area constant.
-export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHistory }) {
+export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHistory, corridorSnapCandidates }) {
   const resizeState = useRef({})
   const [snapGuides, setSnapGuides] = useState([])
+  const corridorX = corridorSnapCandidates?.xCandidates ?? []
 
   const handleResizePointerDown = (event, roomBox) => {
     event.stopPropagation()
@@ -39,7 +40,7 @@ export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHist
       .filter((box) => box.id !== id)
       .map((box) => ({ min: box.x, size: box.width, crossMin: box.y, crossSize: box.height }))
     const threshold = SNAP_THRESHOLD_PX / zoom
-    const { delta, guide } = computeResizeSnap(state.x, desiredWidth, state.y, state.height, others, threshold)
+    const { delta, guide } = computeResizeSnap(state.x, desiredWidth, state.y, state.height, [...others, ...corridorX], threshold)
     setSnapGuides(guide ? [{ orientation: 'vertical', ...guide }] : [])
 
     const { width, height } = clampWidthToArea(desiredWidth + delta, state.area, minWidthPx)

@@ -8,7 +8,16 @@ const SNAP_THRESHOLD_PX = 8
 // tracked as a delta from the pointer's position at drag-start rather than a
 // per-room "grab offset", so the whole selection translates by the same
 // amount regardless of which room in the group was actually grabbed.
-export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition, zoom, recordHistory }) {
+export function useRoomDrag({
+  roomBoxes,
+  setRoomBoxes,
+  getLayoutPointerPosition,
+  zoom,
+  recordHistory,
+  corridorSnapCandidates,
+}) {
+  const corridorX = corridorSnapCandidates?.xCandidates ?? []
+  const corridorY = corridorSnapCandidates?.yCandidates ?? []
   const dragState = useRef(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [snapGuides, setSnapGuides] = useState([])
@@ -76,7 +85,7 @@ export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition,
         state.primaryWidth,
         primaryStart.y + deltaY,
         state.primaryHeight,
-        others.map((box) => ({ min: box.x, size: box.width, crossMin: box.y, crossSize: box.height })),
+        [...others.map((box) => ({ min: box.x, size: box.width, crossMin: box.y, crossSize: box.height })), ...corridorX],
         threshold,
       )
       deltaX += xSnap.delta
@@ -87,7 +96,7 @@ export function useRoomDrag({ roomBoxes, setRoomBoxes, getLayoutPointerPosition,
         state.primaryHeight,
         primaryStart.x + deltaX,
         state.primaryWidth,
-        others.map((box) => ({ min: box.y, size: box.height, crossMin: box.x, crossSize: box.width })),
+        [...others.map((box) => ({ min: box.y, size: box.height, crossMin: box.x, crossSize: box.width })), ...corridorY],
         threshold,
       )
       deltaY += ySnap.delta
