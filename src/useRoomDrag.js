@@ -15,6 +15,7 @@ export function useRoomDrag({
   zoom,
   recordHistory,
   corridorSnapCandidates,
+  wallOffsetPx = 0,
 }) {
   const corridorX = corridorSnapCandidates?.xCandidates ?? []
   const corridorY = corridorSnapCandidates?.yCandidates ?? []
@@ -80,23 +81,46 @@ export function useRoomDrag({
       const others = roomBoxes.filter((box) => !state.startPositions.has(box.id))
       const threshold = SNAP_THRESHOLD_PX / zoom
 
+      // Snap the offset wall outline (each edge pushed out by half the wall
+      // thickness) rather than the raw room box. Adding the same constant
+      // offset to both sides leaves same-side alignment (start-to-start,
+      // center-to-center, end-to-end) unchanged, but start-to-end
+      // ("placed next to") now correctly requires a gap of a full wall
+      // thickness between the raw boxes, so the two rooms' wall outlines
+      // end up flush instead of their bare interiors touching.
       const xSnap = computeDragSnap(
-        primaryStart.x + deltaX,
-        state.primaryWidth,
-        primaryStart.y + deltaY,
-        state.primaryHeight,
-        [...others.map((box) => ({ min: box.x, size: box.width, crossMin: box.y, crossSize: box.height })), ...corridorX],
+        primaryStart.x + deltaX - wallOffsetPx,
+        state.primaryWidth + wallOffsetPx * 2,
+        primaryStart.y + deltaY - wallOffsetPx,
+        state.primaryHeight + wallOffsetPx * 2,
+        [
+          ...others.map((box) => ({
+            min: box.x - wallOffsetPx,
+            size: box.width + wallOffsetPx * 2,
+            crossMin: box.y - wallOffsetPx,
+            crossSize: box.height + wallOffsetPx * 2,
+          })),
+          ...corridorX,
+        ],
         threshold,
       )
       deltaX += xSnap.delta
       if (xSnap.guide) guides.push({ orientation: 'vertical', ...xSnap.guide })
 
       const ySnap = computeDragSnap(
-        primaryStart.y + deltaY,
-        state.primaryHeight,
-        primaryStart.x + deltaX,
-        state.primaryWidth,
-        [...others.map((box) => ({ min: box.y, size: box.height, crossMin: box.x, crossSize: box.width })), ...corridorY],
+        primaryStart.y + deltaY - wallOffsetPx,
+        state.primaryHeight + wallOffsetPx * 2,
+        primaryStart.x + deltaX - wallOffsetPx,
+        state.primaryWidth + wallOffsetPx * 2,
+        [
+          ...others.map((box) => ({
+            min: box.y - wallOffsetPx,
+            size: box.height + wallOffsetPx * 2,
+            crossMin: box.x - wallOffsetPx,
+            crossSize: box.width + wallOffsetPx * 2,
+          })),
+          ...corridorY,
+        ],
         threshold,
       )
       deltaY += ySnap.delta

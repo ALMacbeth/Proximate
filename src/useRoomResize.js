@@ -5,7 +5,7 @@ const SNAP_THRESHOLD_PX = 8
 
 // Dragging the resize handle sets a room box's width directly; height is
 // derived via clampWidthToArea to keep the room's area constant.
-export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHistory, corridorSnapCandidates }) {
+export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHistory, corridorSnapCandidates, wallOffsetPx = 0 }) {
   const resizeState = useRef({})
   const [snapGuides, setSnapGuides] = useState([])
   const corridorX = corridorSnapCandidates?.xCandidates ?? []
@@ -36,11 +36,26 @@ export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHist
     // The room's left edge (state.x) is anchored during resize — only the
     // right edge (x + width) moves — so snapping only checks that edge
     // against other rooms' edges/centers, unlike drag which snaps a whole box.
+    // Candidates use the offset wall outline rather than the raw box, same
+    // reasoning as useRoomDrag.js — the moving edge is the wall's outer
+    // face, not the room's own boundary.
     const others = roomBoxes
       .filter((box) => box.id !== id)
-      .map((box) => ({ min: box.x, size: box.width, crossMin: box.y, crossSize: box.height }))
+      .map((box) => ({
+        min: box.x - wallOffsetPx,
+        size: box.width + wallOffsetPx * 2,
+        crossMin: box.y - wallOffsetPx,
+        crossSize: box.height + wallOffsetPx * 2,
+      }))
     const threshold = SNAP_THRESHOLD_PX / zoom
-    const { delta, guide } = computeResizeSnap(state.x, desiredWidth, state.y, state.height, [...others, ...corridorX], threshold)
+    const { delta, guide } = computeResizeSnap(
+      state.x - wallOffsetPx,
+      desiredWidth + wallOffsetPx * 2,
+      state.y - wallOffsetPx,
+      state.height + wallOffsetPx * 2,
+      [...others, ...corridorX],
+      threshold,
+    )
     setSnapGuides(guide ? [{ orientation: 'vertical', ...guide }] : [])
 
     const { width, height } = clampWidthToArea(desiredWidth + delta, state.area, minWidthPx)

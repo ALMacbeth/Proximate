@@ -191,6 +191,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
   const [underlay, setUnderlay] = useState(null)
   const [pendingUnderlayImage, setPendingUnderlayImage] = useState(null)
   const [underlayError, setUnderlayError] = useState('')
+  const [wallThicknessMm, setWallThicknessMm] = useState('150')
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
@@ -202,6 +203,14 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
   })
 
   const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale)
+
+  // Half the wall thickness, converted from the mm input down to the same
+  // px space room boxes live in — both the wall-outline offset (rendered
+  // further below) and room snapping (so rooms align by their wall's outer
+  // face, not their own raw boundary) use this same value.
+  const wallThicknessValue = Number(wallThicknessMm)
+  const wallOffsetPx =
+    Number.isFinite(wallThicknessValue) && wallThicknessValue > 0 ? ((wallThicknessValue / 1000) * scale) / 2 : 0
 
   const {
     selectedIds,
@@ -217,6 +226,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
     zoom: view.zoom,
     recordHistory,
     corridorSnapCandidates,
+    wallOffsetPx,
   })
 
   const {
@@ -231,6 +241,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
     zoom: view.zoom,
     recordHistory,
     corridorSnapCandidates,
+    wallOffsetPx,
   })
 
   const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
@@ -359,18 +370,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rooms])
 
-  // With no rooms to derive a scale from, an underlay needs *some* scale to
-  // render at. Deriving it from the underlay's own real-world size (fitting
-  // the whole page into a fixed pixel width) meant any room added
-  // afterward inherited that same scale — and a real, to-scale drawing can
-  // span hundreds of meters, which produces a tiny px-per-meter ratio that
-  // makes every room look microscopic. Use the same px-per-meter a
-  // normally-sized room would get from computeScale instead, so rooms
-  // added later still look reasonable; the underlay itself may then span
-  // many screen-widths, which is what panning/zooming is for.
-  // Only when rooms are empty: once real rooms exist they're the
-  // authoritative source for scale, exactly as a manually-added room never
-  // retroactively rescales an existing loaded layout either.
+
   useEffect(() => {
     if (rooms.length === 0 && underlay) {
       const REFERENCE_ROOM_AREA_SQM = 20
@@ -650,6 +650,22 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
                       {underlayError}
                   </p>
               )}
+              <div
+                  className="wall_thickness_control"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}
+              >
+                  <label>
+                      Wall thickness (mm):
+                      <input
+                          type="number"
+                          value={wallThicknessMm}
+                          step="any"
+                          min="0"
+                          onChange={(event) => setWallThicknessMm(event.target.value)}
+                      />
+                  </label>
+              </div>
               {pendingUnderlayImage && (
                   <UnderlayScalePrompt
                       onApply={(scaleRatio) => {
@@ -776,6 +792,20 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
                 zIndex: 5,
               }}
             />
+          )}
+          {wallOffsetPx > 0 && (
+            <svg className="canvas-wall-outlines">
+              {roomBoxes.map((roomBox) => (
+                <rect
+                  key={`wall-${roomBox.id}`}
+                  x={roomBox.x - wallOffsetPx}
+                  y={roomBox.y - wallOffsetPx}
+                  width={roomBox.width + wallOffsetPx * 2}
+                  height={roomBox.height + wallOffsetPx * 2}
+                  className="wall-outline"
+                />
+              ))}
+            </svg>
           )}
           <svg className="canvas-lines">
             {connections.map((connection) => (

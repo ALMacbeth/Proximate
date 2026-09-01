@@ -143,6 +143,21 @@
   pointer-events: none;
 }
 
+.canvas-wall-outlines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wall-outline {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1;
+}
+
 .connection--ok {
   stroke: #2f9e44;
   stroke-width: 2;
@@ -451,6 +466,34 @@
     color: #e5484d;
     font-size: 13px;
     box-shadow: var(--shadow);
+}
+
+.wall_thickness_control {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+    color: var(--text);
+
+    & label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    & input {
+        width: 4.5em;
+        font: inherit;
+        text-align: center;
+        color: var(--text-h);
+        background: var(--bg);
+        border: 1px solid var(--accent-border);
+        border-radius: 4px;
+        padding: 1px 4px;
+    }
 }
 
 .add_room_menu {
