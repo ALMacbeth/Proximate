@@ -192,6 +192,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
   const [pendingUnderlayImage, setPendingUnderlayImage] = useState(null)
   const [underlayError, setUnderlayError] = useState('')
   const [wallThicknessMm, setWallThicknessMm] = useState('150')
+  const [showWallOutlines, setShowWallOutlines] = useState(true)
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
@@ -665,6 +666,14 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
                           onChange={(event) => setWallThicknessMm(event.target.value)}
                       />
                   </label>
+                  <label>
+                      <input
+                          type="checkbox"
+                          checked={showWallOutlines}
+                          onChange={(event) => setShowWallOutlines(event.target.checked)}
+                      />
+                      Show
+                  </label>
               </div>
               {pendingUnderlayImage && (
                   <UnderlayScalePrompt
@@ -793,7 +802,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
               }}
             />
           )}
-          {wallOffsetPx > 0 && (
+          {wallOffsetPx > 0 && showWallOutlines && (
             <svg className="canvas-wall-outlines">
               {roomBoxes.map((roomBox) => (
                 <rect

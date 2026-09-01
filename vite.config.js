@@ -3,7 +3,7 @@ import plugin from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    base: '/SoAInterface/',
+    base: '/Proximate/',
     plugins: [plugin()],
     server: {
         port: 49396,

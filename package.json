@@ -1,6 +1,6 @@
 {
-  "name": "soainterface",
-  "homepage": "https://almacbeth.github.io/SoAInterface",
+  "name": "proximate",
+  "homepage": "https://almacbeth.github.io/Proximate",
   "private": true,
   "version": "0.0.1",
   "type": "module",
