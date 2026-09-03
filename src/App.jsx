@@ -52,12 +52,10 @@ function parseLayoutJson(text) {
         throw new Error('That file is not valid saved layout file')
     }
 
-    // Older exports are a bare array of rooms with no corridor data at all;
-    // newer exports wrap rooms alongside corridorNodes/corridorEdges. Both
-    // still load — a corridors-free file just seeds empty corridor arrays.
+
     if (Array.isArray(data)) {
         if (data.length === 0) throw new Error('The layout file is empty or invalid.')
-        return { rooms: roomsArrayToMap(data), corridorNodes: [], corridorEdges: [] }
+        return { rooms: roomsArrayToMap(data), corridorNodes: [], corridorEdges: [], wallThicknessMm: undefined }
     }
 
     if (!Array.isArray(data?.rooms) || data.rooms.length === 0) {
@@ -68,6 +66,7 @@ function parseLayoutJson(text) {
         rooms: roomsArrayToMap(data.rooms),
         corridorNodes: Array.isArray(data.corridorNodes) ? data.corridorNodes : [],
         corridorEdges: Array.isArray(data.corridorEdges) ? data.corridorEdges : [],
+        wallThicknessMm: Number.isFinite(data.wallThicknessMm) ? data.wallThicknessMm : undefined,
     }
 }
 
@@ -121,6 +120,7 @@ function App() {
     const [rooms, setRooms] = useState({})
     const [corridorNodes, setCorridorNodes] = useState([])
     const [corridorEdges, setCorridorEdges] = useState([])
+    const [wallThicknessMm, setWallThicknessMm] = useState(undefined)
     const [underlayFile, setUnderlayFile] = useState(null)
     const [fileName, setFileName] = useState('')
     const [error, setError] = useState('')
@@ -137,13 +137,12 @@ function App() {
         const isLayoutJson = /\.json$/i.test(file.name)
         const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf'
 
-        // A PDF dropped before any room layout is loaded isn't parsed as
-        // room data at all — it's handed to RoomCanvas as a background
-        // underlay to trace over, with an empty room set so "+" still works.
+
         if (isPdf) {
             setRooms({})
             setCorridorNodes([])
             setCorridorEdges([])
+            setWallThicknessMm(undefined)
             setUnderlayFile(file)
             setFileName('')
             setDropToggle(false)
@@ -163,10 +162,12 @@ function App() {
                     setRooms(parsed.rooms)
                     setCorridorNodes(parsed.corridorNodes)
                     setCorridorEdges(parsed.corridorEdges)
+                    setWallThicknessMm(parsed.wallThicknessMm)
                 } else {
                     setRooms(parseWorkbook(event.target.result))
                     setCorridorNodes([])
                     setCorridorEdges([])
+                    setWallThicknessMm(undefined)
                 }
                 setFileName(file.name)
             } catch (err) {
@@ -174,6 +175,7 @@ function App() {
                 setRooms({})
                 setCorridorNodes([])
                 setCorridorEdges([])
+                setWallThicknessMm(undefined)
                 setFileName('')
             }
         }
@@ -288,6 +290,7 @@ function App() {
                     corridorNodes={corridorNodes}
                     corridorEdges={corridorEdges}
                     initialUnderlayFile={underlayFile}
+                    wallThicknessMm={wallThicknessMm}
                 />
             )}
         </section>

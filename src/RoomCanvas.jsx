@@ -171,7 +171,13 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
     )
 }
 
-function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges: initialCorridorEdges, initialUnderlayFile }) {
+function RoomCanvas({
+  rooms,
+  corridorNodes: initialCorridorNodes,
+  corridorEdges: initialCorridorEdges,
+  initialUnderlayFile,
+  wallThicknessMm: initialWallThicknessMm,
+}) {
   const containerRef = useRef(null)
   const gestureModeRef = useRef(null)
   const [roomBoxes, setRoomBoxes] = useState([])
@@ -343,6 +349,7 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
       setScale(1)
       setCorridorNodes([])
       setCorridorEdges([])
+      setWallThicknessMm('150')
       resetView()
       return
     }
@@ -350,6 +357,9 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
     setScale(computedScale)
     setCorridorNodes(initialCorridorNodes ?? [])
     setCorridorEdges(initialCorridorEdges ?? [])
+    // Older exports predate this field, so a missing value falls back to
+    // the same default a brand-new session starts with.
+    setWallThicknessMm(Number.isFinite(initialWallThicknessMm) ? String(initialWallThicknessMm) : '150')
 
     // A previously exported layout JSON already carries x/y/width/height (and
     // area) for every room, so re-importing it should restore that exact
@@ -578,7 +588,17 @@ function RoomCanvas({ rooms, corridorNodes: initialCorridorNodes, corridorEdges:
 
   const handleExportJson = () => {
     downloadFile(
-      JSON.stringify({ version: 2, rooms: roomBoxes, corridorNodes, corridorEdges }, null, 2),
+      JSON.stringify(
+        {
+          version: 2,
+          rooms: roomBoxes,
+          corridorNodes,
+          corridorEdges,
+          wallThicknessMm: Number.isFinite(wallThicknessValue) ? wallThicknessValue : 150,
+        },
+        null,
+        2,
+      ),
       'room-layout.json',
       'application/json',
     )
