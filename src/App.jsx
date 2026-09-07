@@ -128,6 +128,7 @@ function App() {
     const fileInputRef = useRef(null)
     const [fileDropToggle, setDropToggle] = useState(true)
     const [infoToggle, setInfoToggle] = useState(false)
+    const [helpToggle, setHelpToggle] = useState(false)
 
     const handleFile = useCallback((file) => {
         if (!file) return
@@ -252,6 +253,13 @@ function App() {
                         </br>
                         <a href="./AreaScheduleTemplate.xlsx" download ><button> Download Excel Template </button></a>
                     </p>)}
+                {helpToggle && fileDropToggle && (
+                    <div>
+                        <p>If you have any questions about using this tool, please refer to the user guide <a href="https://miro.com/app/board/uXjVHrncD74=/?share_link_id=312980620673">here</a><br>
+                        </br>If you encouter a bug or have a feature request, please contact: <a href="mailto:alex.macbeth@wwparchitects.com">alex.macbeth@wwparchitects.com</a>
+                        </p>
+                    </div>
+                )}
             </div>
             {fileDropToggle && (
                 <div
@@ -276,11 +284,19 @@ function App() {
                     />
                 </div>
             )}
+            {fileDropToggle && (
+                <button
+                    className="info_button"
 
+                    onClick={() => setHelpToggle(!helpToggle)}
+                >
+                    Help
+                </button>)}
             
             {error && <p className="error">{error}
             <br>
-                </br><button
+                </br>
+                <button
                 onClick={() => setDropToggle(true) }>Upload a new file
             </button></p>}
 
@@ -292,8 +308,11 @@ function App() {
                     initialUnderlayFile={underlayFile}
                     wallThicknessMm={wallThicknessMm}
                 />
+
             )}
+            
         </section>
+        
     )
 }
 

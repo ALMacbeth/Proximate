@@ -432,6 +432,17 @@
     color: var(--text);
     font-size: 13px;
 }
+.info_button {
+    width: fit-content;
+    height: 25px;
+    padding: 0 6px;
+    white-space: nowrap;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--accent-bg);
+    color: var(--text);
+    font-size: 10px;
+}
 
 .add_corridor_button--active {
     background: var(--accent);

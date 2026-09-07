@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import RoomCanvas from './RoomCanvas';
 
 // Shown once a chain of points has been placed, asking for the width that
 // applies to every edge in that chain (mirrors AddNewConnection's popover
@@ -9,7 +10,7 @@ export function CorridorWidthPrompt({ onApply, onCancel }) {
   const applyWidth = (e) => {
     e.preventDefault()
     const value = Number(widthMeters)
-    if (!Number.isFinite(value) || value <= 0) return
+      if (!Number.isFinite(value) || value <= 0) return
     onApply(value)
   }
 

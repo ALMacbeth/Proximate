@@ -209,8 +209,6 @@ function RoomCanvas({
     corridorEdges: [corridorEdges, setCorridorEdges],
   })
 
-  const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale)
-
   // Half the wall thickness, converted from the mm input down to the same
   // px space room boxes live in — both the wall-outline offset (rendered
   // further below) and room snapping (so rooms align by their wall's outer
@@ -218,6 +216,8 @@ function RoomCanvas({
   const wallThicknessValue = Number(wallThicknessMm)
   const wallOffsetPx =
     Number.isFinite(wallThicknessValue) && wallThicknessValue > 0 ? ((wallThicknessValue / 1000) * scale) / 2 : 0
+
+  const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx)
 
   const {
     selectedIds,
@@ -834,6 +834,20 @@ function RoomCanvas({
                   className="wall-outline"
                 />
               ))}
+              {corridorEdges.map((edge) => {
+                const nodeA = nodeById.get(edge.nodeAId)
+                const nodeB = nodeById.get(edge.nodeBId)
+                if (!nodeA || !nodeB) return null
+                // Same idea as the room outline above: the corridor's own
+                // offset polygon (drawn elsewhere) already represents its
+                // full width, so growing that same width by a further wall
+                // thickness on top puts this outline exactly half a wall's
+                // thickness beyond each of its two long edges.
+                const outline = computeEdgeOffsetPolygon(nodeA, nodeB, edge.widthMeters * scale + wallOffsetPx * 2)
+                if (!outline) return null
+                const points = outline.map((p) => `${p.x},${p.y}`).join(' ')
+                return <polygon key={`wall-${edge.id}`} points={points} className="wall-outline" />
+              })}
             </svg>
           )}
           <svg className="canvas-lines">

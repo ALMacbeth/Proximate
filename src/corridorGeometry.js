@@ -217,7 +217,10 @@ export function resolveCorridorTopology(nodes, edges, options = {}) {
 // geometry.js's findAxisSnap already expects from other rooms — a
 // zero-size entry contributes one point candidate (its `min`) without any
 // changes to that shared engine.
-export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale) {
+// `wallOffsetPx` pushes the outer two candidates out to the corridor's wall
+// outline (matching the rendered offset outline) instead of its own bare
+// edge — the centerline candidate is unaffected, same as the room wall-snap.
+export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx = 0) {
   const xCandidates = []
   const yCandidates = []
 
@@ -230,7 +233,7 @@ export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, 
 
     const dx = b.x - a.x
     const dy = b.y - a.y
-    const half = widthPx / 2
+    const half = widthPx / 2 + wallOffsetPx
 
     if (Math.abs(dy) <= AXIS_ALIGN_EPSILON_PX && Math.abs(dx) > AXIS_ALIGN_EPSILON_PX) {
       const centerY = (a.y + b.y) / 2
