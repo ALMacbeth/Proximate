@@ -66,6 +66,27 @@ function resolveOverlaps(nodes) {
   }
 }
 
+// How far a node's own footprint reaches from its center toward another
+// node, along the direction (ux, uy) between them — this is what lets
+// resolveAdjacency measure the actual visible GAP between two rooms
+// (edge-to-edge) instead of a raw center-to-center span that includes a
+// chunk of each room's own interior. Matches whichever shape is currently
+// driving the live collision: a circle's reach is just its radius in every
+// direction, but a rectangle's reach depends on the angle — the same
+// "distance from center to boundary along a ray" you'd compute for an
+// axis-aligned box (min of how far you can go before crossing the left/
+// right edge vs. the top/bottom edge).
+function computeReach(node, ux, uy, shape) {
+  if (shape === 'rectangle') {
+    const halfWidth = node.width / 2
+    const halfHeight = node.height / 2
+    const tx = ux !== 0 ? halfWidth / Math.abs(ux) : Infinity
+    const ty = uy !== 0 ? halfHeight / Math.abs(uy) : Infinity
+    return Math.min(tx, ty)
+  }
+  return node.radius
+}
+
 // The user's own explicit adjacency rules get a dedicated, unconditional
 // position solver — the same category of mechanism as resolveOverlaps —
 // rather than going through the soft, alpha-scaled velocity force below
@@ -89,7 +110,7 @@ function resolveOverlaps(nodes) {
 // which runs immediately after this in the same tick, a much smaller
 // correction to react to each time, so the pair settles smoothly at
 // whatever distance is actually achievable instead of oscillating.
-function resolveAdjacency(nodes, affinities) {
+function resolveAdjacency(nodes, affinities, shape) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   affinities.forEach(({ tier, aId, bId, maxDistancePx }) => {
     if (tier !== 'adjacency') return
@@ -98,31 +119,32 @@ function resolveAdjacency(nodes, affinities) {
     if (!nodeA || !nodeB) return
     const dx = nodeB.x - nodeA.x
     const dy = nodeB.y - nodeA.y
-    const distance = Math.hypot(dx, dy) || 1
+    const centerDistance = Math.hypot(dx, dy) || 1
+    const ux = dx / centerDistance
+    const uy = dy / centerDistance
 
-    // Never pull the pair closer than their own combined footprints allow —
-    // without this floor, a maxDistancePx smaller than what the two rooms'
-    // sizes can physically achieve doesn't just get "as close as possible":
-    // in circle mode specifically, forceCollide is a soft, proportional
-    // spring (pushes harder the more two circles overlap, weaker as the
-    // overlap shrinks), so a persistent opposing pull from this force can
-    // settle into a STABLE equilibrium partway inside the overlap instead of
-    // being reliably outmuscled the way the always-fully-corrective
-    // resolveOverlaps solver outmuscles it in rectangle mode. Clamping the
-    // target here means this force simply stops asking once it reaches the
-    // physical floor, in either mode, rather than relying on the collision
-    // solver's own strength to win a fight it shouldn't have to have.
-    const safeMinDistance = (nodeA.radius || 0) + (nodeB.radius || 0) + SEPARATION_PADDING_PX
-    const target = Math.max(maxDistancePx, safeMinDistance)
-    const excess = distance - target
+    // maxDistancePx is a clearance-gap ceiling — the same edge-to-edge
+    // metric computeConnections/rectDistance use elsewhere in the app for
+    // adjacency-violation display — not a center-to-center span, so each
+    // room's own reach has to come out of the raw distance first. Without
+    // this, "distance" silently meant a point somewhere inside each room
+    // rather than its visible edge, which is most obvious in circle mode
+    // where the room's actual boundary is right there on screen.
+    const reachA = computeReach(nodeA, ux, uy, shape)
+    const reachB = computeReach(nodeB, ux, uy, shape)
+    const edgeDistance = Math.max(0, centerDistance - reachA - reachB)
+
+    // The floor is just the padding gap now — reach is already subtracted
+    // above, so there's no need to also account for each room's footprint
+    // here the way the old center-to-center version did.
+    const target = Math.max(maxDistancePx, SEPARATION_PADDING_PX)
+    const excess = edgeDistance - target
     if (excess <= 0) return
 
     const aFixed = nodeA.fx != null
     const bFixed = nodeB.fx != null
     if (aFixed && bFixed) return
 
-    const ux = dx / distance
-    const uy = dy / distance
     const step = excess * ADJACENCY_CORRECTION_FACTOR
     const pull = aFixed || bFixed ? step : step / 2
     if (!aFixed) {
@@ -254,6 +276,12 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
   // instead, which is tighter but less free-flowing. Switchable live via
   // setCollisionShape below, which hot-swaps the running simulation's force.
   const [collisionShape, setCollisionShapeState] = useState('circle')
+  // resolveAdjacency's force closure (registered once in start()) and
+  // accept()'s cleanup loop both need whichever shape is CURRENT, including
+  // after a live setCollisionShape hot-swap — a ref avoids re-registering
+  // that force on every mode change just to keep its closure fresh.
+  const collisionShapeRef = useRef(collisionShape)
+  collisionShapeRef.current = collisionShape
   const simulationRef = useRef(null)
   const nodesRef = useRef([])
   const affinitiesRef = useRef([])
@@ -322,7 +350,7 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
       // cluster: collision always gets the last word on overlap-freedom, but
       // adjacency gets to force the crowding that makes room in the first
       // place, every single tick, not just when alpha happens to be high.
-      .force('adjacency', () => resolveAdjacency(nodes, affinities))
+      .force('adjacency', () => resolveAdjacency(nodes, affinities, collisionShapeRef.current))
       .alphaDecay(0.02)
       .on('tick', readPreview)
 
@@ -404,7 +432,7 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
     // two rooms' circles can settle non-overlapping while their actual
     // rectangles still clip along a diagonal (see start()).
     for (let i = 0; i < 20; i += 1) {
-      resolveAdjacency(nodesRef.current, affinitiesRef.current)
+      resolveAdjacency(nodesRef.current, affinitiesRef.current, collisionShapeRef.current)
       resolveOverlaps(nodesRef.current)
     }
     recordHistory()

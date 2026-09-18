@@ -330,6 +330,33 @@ function RoomCanvas({
     return { x: centerX - roomBox.radius, y: centerY - roomBox.radius, width: diameter, height: diameter }
   }
 
+  // computeConnections' fromPoint/toPoint are the nearest pair of RECTANGLE
+  // side-midpoints — correct for the normal room-card view, but during a
+  // circle preview that anchors the line to a point that isn't on the
+  // rendered circle's edge at all (the same "measuring from inside the
+  // shape" mismatch the adjacency physics had). Recompute both endpoints as
+  // the circle-edge point along the straight line between the two room
+  // centers instead, so the drawn line actually touches what's on screen.
+  const getConnectionPoints = (connection) => {
+    if (!isCirclePreview) return { from: connection.fromPoint, to: connection.toPoint }
+    const fromRadius = connection.from.radius
+    const toRadius = connection.to.radius
+    if (!Number.isFinite(fromRadius) || !Number.isFinite(toRadius)) {
+      return { from: connection.fromPoint, to: connection.toPoint }
+    }
+    const fromCenter = { x: connection.from.x + connection.from.width / 2, y: connection.from.y + connection.from.height / 2 }
+    const toCenter = { x: connection.to.x + connection.to.width / 2, y: connection.to.y + connection.to.height / 2 }
+    const dx = toCenter.x - fromCenter.x
+    const dy = toCenter.y - fromCenter.y
+    const distance = Math.hypot(dx, dy) || 1
+    const ux = dx / distance
+    const uy = dy / distance
+    return {
+      from: { x: fromCenter.x + ux * fromRadius, y: fromCenter.y + uy * fromRadius },
+      to: { x: toCenter.x - ux * toRadius, y: toCenter.y - uy * toRadius },
+    }
+  }
+
   const handleArrangeRoomPointerDown = (event, roomBox) => {
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -648,8 +675,33 @@ function RoomCanvas({
   // settles) — exports and the DXF/SVG buttons still use the committed
   // roomBoxes/connections above, since nothing here is real until accept().
   const displayConnections = isArranging ? computeConnections(displayBoxes, scale) : connections
+
+  // computeConnections' own `violated` flag is rectDistance-based (the true
+  // rectangle-to-rectangle gap) — correct for the normal view, but wrong
+  // during a circle preview for the same reason the line endpoints were:
+  // it's checking a boundary that isn't the one on screen. A circle's edge
+  // sits further from center than the rectangle's along some directions and
+  // closer along others (an equal-area circle is narrower than a square at
+  // the corners, wider face-on), so rectDistance can flag two rooms as
+  // still-too-far-apart (red) even once their actual rendered circles have
+  // closed the gap. Recomputed here the same way the adjacency physics and
+  // getConnectionPoints already do: center distance minus both radii.
+  const isConnectionViolated = (connection) => {
+    if (!isCirclePreview) return connection.violated
+    const fromRadius = connection.from.radius
+    const toRadius = connection.to.radius
+    if (!Number.isFinite(fromRadius) || !Number.isFinite(toRadius)) return connection.violated
+    const maxDistanceMeters = connection.from.adjacentRooms?.[connection.to.roomName] ?? connection.to.adjacentRooms?.[connection.from.roomName]
+    if (!Number.isFinite(maxDistanceMeters)) return connection.violated
+    const fromCenter = { x: connection.from.x + connection.from.width / 2, y: connection.from.y + connection.from.height / 2 }
+    const toCenter = { x: connection.to.x + connection.to.width / 2, y: connection.to.y + connection.to.height / 2 }
+    const centerDistance = Math.hypot(toCenter.x - fromCenter.x, toCenter.y - fromCenter.y)
+    const edgeDistance = Math.max(0, centerDistance - fromRadius - toRadius)
+    return edgeDistance > maxDistanceMeters * scale
+  }
+
   const displayViolatedIds = isArranging
-    ? new Set(displayConnections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
+    ? new Set(displayConnections.filter((c) => isConnectionViolated(c)).flatMap((c) => [c.from.id, c.to.id]))
     : violatedIds
 
   const nodeById = new Map(corridorNodes.map((node) => [node.id, node]))
@@ -1015,16 +1067,19 @@ function RoomCanvas({
             </svg>
           )}
           <svg className="canvas-lines">
-            {displayConnections.map((connection) => (
-              <line
-                key={connection.id}
-                x1={connection.fromPoint.x}
-                y1={connection.fromPoint.y}
-                x2={connection.toPoint.x}
-                y2={connection.toPoint.y}
-                className={`connection${connection.violated ? ' connection--violated' : ' connection--ok'}`}
-              />
-            ))}
+            {displayConnections.map((connection) => {
+              const points = getConnectionPoints(connection)
+              return (
+                <line
+                  key={connection.id}
+                  x1={points.from.x}
+                  y1={points.from.y}
+                  x2={points.to.x}
+                  y2={points.to.y}
+                  className={`connection${isConnectionViolated(connection) ? ' connection--violated' : ' connection--ok'}`}
+                />
+              )
+            })}
             {snapGuides.map((guide, index) => (
               <line
                 key={`snap-guide-${index}`}
