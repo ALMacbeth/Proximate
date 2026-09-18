@@ -1,6 +1,6 @@
 {
   "name": "proximate",
-  "homepage": "https://wwp-architects-planners.github.io/wwp-proximate",
+  "homepage": "https://almacbeth.github.io/Proximate",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -10,7 +10,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist -r https://github.com/ALMacbeth/Proximate.git"
   },
   "dependencies": {
     "d3-force": "^3.0.0",
