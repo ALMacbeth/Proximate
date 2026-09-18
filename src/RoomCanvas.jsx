@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HexColorPicker } from 'react-colorful'
 import { buildDxf } from './dxfExport.js'
+import { buildSvg } from './svgExport.js'
 import { downloadFile } from './download.js'
 import {
   computeScale,
@@ -25,6 +26,7 @@ import { useUndoHistory } from './useUndoHistory.js'
 import { useDragSelect } from './useDragSel.js'
 import { useCorridorDraw } from './useCorridorDraw.js'
 import { useCorridorDrag } from './useCorridorDrag.js'
+import { useAutoArrange } from './useAutoArrange.js'
 import { CorridorWidthPrompt } from './CorridorMenus.jsx'
 import { UnderlayScalePrompt } from './UnderlayMenus.jsx'
 import { renderPdfFirstPageToImage, pointsToMeters } from './pdfUnderlay.js'
@@ -199,6 +201,13 @@ function RoomCanvas({
   const [underlayError, setUnderlayError] = useState('')
   const [wallThicknessMm, setWallThicknessMm] = useState('150')
   const [showWallOutlines, setShowWallOutlines] = useState(true)
+  // Selection lives here (not inside useRoomDrag/useCorridorDrag) so both
+  // hooks can read and clear each other's selection — that's what lets a
+  // mixed room+corridor selection move together regardless of which
+  // element started the drag.
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [selectedCorridorNodeIds, setSelectedCorridorNodeIds] = useState(() => new Set())
+  const [selectedCorridorEdgeIds, setSelectedCorridorEdgeIds] = useState(() => new Set())
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
@@ -220,8 +229,6 @@ function RoomCanvas({
   const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx)
 
   const {
-    selectedIds,
-    setSelectedIds,
     snapGuides: dragSnapGuides,
     handlePointerDown,
     handlePointerMove,
@@ -229,11 +236,21 @@ function RoomCanvas({
   } = useRoomDrag({
     roomBoxes,
     setRoomBoxes,
+    selectedIds,
+    setSelectedIds,
     getLayoutPointerPosition,
     zoom: view.zoom,
     recordHistory,
     corridorSnapCandidates,
     wallOffsetPx,
+    corridorNodes,
+    setCorridorNodes,
+    corridorEdges,
+    setCorridorEdges,
+    selectedCorridorNodeIds,
+    setSelectedCorridorNodeIds,
+    selectedCorridorEdgeIds,
+    setSelectedCorridorEdgeIds,
   })
 
   const {
@@ -254,10 +271,6 @@ function RoomCanvas({
   const snapGuides = [...dragSnapGuides, ...resizeSnapGuides]
 
   const {
-    selectedNodeIds: selectedCorridorNodeIds,
-    setSelectedNodeIds: setSelectedCorridorNodeIds,
-    selectedEdgeIds: selectedCorridorEdgeIds,
-    setSelectedEdgeIds: setSelectedCorridorEdgeIds,
     handleNodePointerDown: handleCorridorNodePointerDown,
     handleNodePointerMove: handleCorridorNodePointerMove,
     handleNodePointerUp: handleCorridorNodePointerUp,
@@ -269,9 +282,72 @@ function RoomCanvas({
     setCorridorNodes,
     corridorEdges,
     setCorridorEdges,
+    selectedNodeIds: selectedCorridorNodeIds,
+    setSelectedNodeIds: setSelectedCorridorNodeIds,
+    selectedEdgeIds: selectedCorridorEdgeIds,
+    setSelectedEdgeIds: setSelectedCorridorEdgeIds,
+    roomBoxes,
+    setRoomBoxes,
+    selectedRoomIds: selectedIds,
+    setSelectedRoomIds: setSelectedIds,
     getLayoutPointerPosition,
     recordHistory,
   })
+
+  const {
+    isArranging,
+    previewBoxes,
+    collisionShape,
+    setCollisionShape,
+    start: startAutoArrange,
+    cancel: cancelAutoArrange,
+    accept: acceptAutoArrange,
+    reshuffle: reshuffleAutoArrange,
+    pinNode: pinArrangeNode,
+    dragPreview: dragArrangePreview,
+    releaseNode: releaseArrangeNode,
+  } = useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory })
+
+  // What actually renders: the live physics preview while arranging, the
+  // real (undo-tracked) room boxes otherwise. Only the rendering reads this
+  // — drag/resize/selection/export all keep operating on roomBoxes itself,
+  // which auto-arrange never touches until accept() commits it.
+  const displayBoxes = isArranging ? previewBoxes : roomBoxes
+  const isCirclePreview = isArranging && collisionShape === 'circle'
+
+  // The box a room actually renders as: its real rectangle normally, or the
+  // same equal-area circle the physics is colliding against (roomBox.radius,
+  // only present on previewBoxes entries) while in circle-collision preview
+  // — so what you see settling is what's actually pushing other rooms
+  // around, not a rectangle silently riding along a circle's motion.
+  const getRenderRect = (roomBox) => {
+    if (!isCirclePreview || !Number.isFinite(roomBox.radius)) {
+      return { x: roomBox.x, y: roomBox.y, width: roomBox.width, height: roomBox.height }
+    }
+    const centerX = roomBox.x + roomBox.width / 2
+    const centerY = roomBox.y + roomBox.height / 2
+    const diameter = roomBox.radius * 2
+    return { x: centerX - roomBox.radius, y: centerY - roomBox.radius, width: diameter, height: diameter }
+  }
+
+  const handleArrangeRoomPointerDown = (event, roomBox) => {
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const pos = getLayoutPointerPosition(event)
+    pinArrangeNode(roomBox.id, pos.x, pos.y)
+  }
+
+  const handleArrangeRoomPointerMove = (event, roomBox) => {
+    event.stopPropagation()
+    const pos = getLayoutPointerPosition(event)
+    dragArrangePreview(roomBox.id, pos.x, pos.y)
+  }
+
+  const handleArrangeRoomPointerUp = (event, roomBox) => {
+    event.stopPropagation()
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    releaseArrangeNode(roomBox.id)
+  }
 
   const {
     selectionRect,
@@ -343,6 +419,9 @@ function RoomCanvas({
     // A fresh file (or reset) invalidates any history from whatever was
     // loaded before it, so undo can't reach back into a different room set.
     clearHistory()
+    // A new room set makes any in-progress arrange preview meaningless —
+    // its simulation nodes reference the old rooms.
+    cancelAutoArrange()
 
     if (rooms.length === 0) {
       setRoomBoxes([])
@@ -424,6 +503,7 @@ function RoomCanvas({
   // React state) so the move/up handlers route correctly even before a
   // re-render lands.
   const handleCanvasPointerDown = (event) => {
+    if (isArranging) return
     if (isDrawingCorridor) {
       if (event.button === 0) placePoint(event)
       return
@@ -487,6 +567,7 @@ function RoomCanvas({
 
   useEffect(() => {
     const handleKeyDown = (event) => {
+      if (isArranging) return
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
       const target = event.target
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
@@ -562,6 +643,15 @@ function RoomCanvas({
   const connections = computeConnections(roomBoxes, scale)
   const violatedIds = new Set(connections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
 
+  // Recomputed against the live preview while arranging, purely for visual
+  // feedback (so you can see adjacency violations resolve as the physics
+  // settles) — exports and the DXF/SVG buttons still use the committed
+  // roomBoxes/connections above, since nothing here is real until accept().
+  const displayConnections = isArranging ? computeConnections(displayBoxes, scale) : connections
+  const displayViolatedIds = isArranging
+    ? new Set(displayConnections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
+    : violatedIds
+
   const nodeById = new Map(corridorNodes.map((node) => [node.id, node]))
   const nodeDegrees = computeNodeDegrees(corridorEdges)
   const nodeHitRadius = NODE_HIT_RADIUS_SCREEN_PX / view.zoom
@@ -584,6 +674,23 @@ function RoomCanvas({
   const handleExportDxf = () => {
     const dxf = buildDxf({ rooms: roomBoxes, connections, violatedIds, scale })
     downloadFile(dxf, 'room-layout.dxf', 'application/dxf')
+  }
+
+  const handleExportSvg = () => {
+    const svg = buildSvg({
+      roomBoxes,
+      corridorNodes,
+      corridorEdges,
+      connections,
+      violatedIds,
+      scale,
+      // Wall outlines are hidden via the canvas's own "Show" toggle, not by
+      // zeroing wallThicknessMm — so mirror that toggle here rather than
+      // relying on wallOffsetPx alone, or a hidden outline would still
+      // sneak into the export.
+      wallOffsetPx: showWallOutlines ? wallOffsetPx : 0,
+    })
+    downloadFile(svg, 'room-layout.svg', 'image/svg+xml')
   }
 
   const handleExportJson = () => {
@@ -612,10 +719,13 @@ function RoomCanvas({
 
   return (
     <>
-      {roomBoxes.length > 0 && (
+      {roomBoxes.length > 0 && !isArranging && (
         <div className="export-actions">
           <button type="button" className="export-button" onClick={handleExportDxf}>
             Export as CAD (.dxf)
+          </button>
+          <button type="button" className="export-button" onClick={handleExportSvg}>
+            Export as SVG (.svg)
           </button>
           <button type="button" className="export-button" onClick={handleExportJson}>
             Save layout file (.json)
@@ -636,22 +746,73 @@ function RoomCanvas({
 
 
 
-              <button
-                  className="add_room_button"
-                  onPointerDown={(e) => {
-                      e.stopPropagation()
+              {!isArranging && (
+                  <button
+                      className="add_room_button"
+                      onPointerDown={(e) => {
+                          e.stopPropagation()
 
-                  }}
-                  onClick={(e) => {
-                      e.stopPropagation()
+                      }}
+                      onClick={(e) => {
+                          e.stopPropagation()
 
-                      setShowAddRoomMenu(true)
+                          setShowAddRoomMenu(true)
 
-                  }}
-                  style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
-              >
-                  +
-              </button>
+                      }}
+                      style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
+                  >
+                      +
+                  </button>
+              )}
+              {roomBoxes.length > 1 && !isArranging && (
+                  <button
+                      className="auto_arrange_button"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                          e.stopPropagation()
+                          startAutoArrange()
+                      }}
+                      style={{ position: 'absolute', top: 54, right: 12, zIndex: 10 }}
+                  >
+                      Auto-arrange
+                  </button>
+              )}
+              {isArranging && (
+                  <div
+                      className="auto_arrange_controls"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}
+                  >
+                      <span>Drag any room to nudge it, then Accept or Cancel.</span>
+                      <div className="collision_shape_toggle">
+                          <button
+                              type="button"
+                              className={collisionShape === 'circle' ? 'collision_shape_toggle--active' : ''}
+                              onClick={() => setCollisionShape('circle')}
+                              title="Rooms can slide past each other while settling"
+                          >
+                              Circles
+                          </button>
+                          <button
+                              type="button"
+                              className={collisionShape === 'rectangle' ? 'collision_shape_toggle--active' : ''}
+                              onClick={() => setCollisionShape('rectangle')}
+                              title="Rooms collide as their real shape the whole time"
+                          >
+                              Rectangles
+                          </button>
+                      </div>
+                      <button type="button" onClick={reshuffleAutoArrange}>
+                          Reshuffle
+                      </button>
+                      <button type="button" onClick={acceptAutoArrange}>
+                          Accept
+                      </button>
+                      <button type="button" onClick={cancelAutoArrange}>
+                          Cancel
+                      </button>
+                  </div>
+              )}
               {underlay && (
                   <button
                       className="remove_underlay_button"
@@ -709,7 +870,7 @@ function RoomCanvas({
                       onCancel={() => setPendingUnderlayImage(null)}
                   />
               )}
-              {roomBoxes.length > 0 && (
+              {roomBoxes.length > 0 && !isArranging && (
                   <button
                       className={`add_corridor_button${isDrawingCorridor ? ' add_corridor_button--active' : ''}`}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -738,7 +899,7 @@ function RoomCanvas({
                       onCancel={() => setShowCorridorWidthPrompt(false)}
                   />
               )}
-              {selectedIds.size > 0 && (
+              {selectedIds.size > 0 && !isArranging && (
                   <button
                       className="add_connection_button"
                       onPointerDown={(e) => {
@@ -822,9 +983,12 @@ function RoomCanvas({
               }}
             />
           )}
-          {wallOffsetPx > 0 && showWallOutlines && (
+          {/* Hidden while arranging: positions aren't final yet, and in
+             circle mode there's no sensible square wall outline to draw
+             around a room rendered as a circle. */}
+          {wallOffsetPx > 0 && showWallOutlines && !isArranging && (
             <svg className="canvas-wall-outlines">
-              {roomBoxes.map((roomBox) => (
+              {displayBoxes.map((roomBox) => (
                 <rect
                   key={`wall-${roomBox.id}`}
                   x={roomBox.x - wallOffsetPx}
@@ -851,7 +1015,7 @@ function RoomCanvas({
             </svg>
           )}
           <svg className="canvas-lines">
-            {connections.map((connection) => (
+            {displayConnections.map((connection) => (
               <line
                 key={connection.id}
                 x1={connection.fromPoint.x}
@@ -1010,60 +1174,71 @@ function RoomCanvas({
                 </div>
               )
             })()}
-          {roomBoxes.map((roomBox) => (
+          {displayBoxes.map((roomBox) => {
+            const renderRect = getRenderRect(roomBox)
+            return (
             <div
               key={roomBox.id}
-              className={`room-card${violatedIds.has(roomBox.id) ? ' room-card--violated' : ''}${selectedIds.has(roomBox.id) ? ' room-card--selected' : ''}`}
+              className={`room-card${displayViolatedIds.has(roomBox.id) ? ' room-card--violated' : ''}${selectedIds.has(roomBox.id) ? ' room-card--selected' : ''}${isArranging ? ' room-card--arranging' : ''}${isCirclePreview ? ' room-card--circle' : ''}`}
               style={{
-                width: roomBox.width,
-                height: roomBox.height,
-                transform: `translate(${roomBox.x}px, ${roomBox.y}px)`,
-                ...(roomBox.color && !violatedIds.has(roomBox.id) ? { backgroundColor: roomBox.color } : {}),
+                width: renderRect.width,
+                height: renderRect.height,
+                transform: `translate(${renderRect.x}px, ${renderRect.y}px)`,
+                ...(roomBox.color && !displayViolatedIds.has(roomBox.id) ? { backgroundColor: roomBox.color } : {}),
               }}
-              onPointerDown={(event) => handlePointerDown(event, roomBox)}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onDoubleClick={(event) => handleRoomDoubleClick(event, roomBox)}
+              onPointerDown={(event) =>
+                isArranging ? handleArrangeRoomPointerDown(event, roomBox) : handlePointerDown(event, roomBox)
+              }
+              onPointerMove={(event) => (isArranging ? handleArrangeRoomPointerMove(event, roomBox) : handlePointerMove(event))}
+              onPointerUp={(event) => (isArranging ? handleArrangeRoomPointerUp(event, roomBox) : handlePointerUp(event))}
+              onDoubleClick={(event) => {
+                if (!isArranging) handleRoomDoubleClick(event, roomBox)
+              }}
             >
-              <div
-                className="room-card__resize-handle"
-                onPointerDown={(event) => handleResizePointerDown(event, roomBox)}
-                onPointerMove={(event) => handleResizePointerMove(event, roomBox.id)}
-                onPointerUp={(event) => handleResizePointerUp(event, roomBox.id)}
-              >
-                <svg
-                          className="room-card__resize-icon"
-                          viewBox="0 0 24 24"
-                          width="14"
-                          height="14"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          
-
+              {!isArranging && (
+                <div
+                  className="room-card__resize-handle"
+                  onPointerDown={(event) => handleResizePointerDown(event, roomBox)}
+                  onPointerMove={(event) => handleResizePointerMove(event, roomBox.id)}
+                  onPointerUp={(event) => handleResizePointerUp(event, roomBox.id)}
                 >
-                  <path d="M3 12H21M3 12L7 8M3 12L7 16M21 12L17 8M21 12L17 16" />
-                </svg>
-              </div>
+                  <svg
+                            className="room-card__resize-icon"
+                            viewBox="0 0 24 24"
+                            width="14"
+                            height="14"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+
+
+                  >
+                    <path d="M3 12H21M3 12L7 8M3 12L7 16M21 12L17 8M21 12L17 16" />
+                  </svg>
+                </div>
+              )}
             </div>
-          ))}
+            )
+          })}
           {/* Rendered as a second pass, after every room card, so labels
              always stack above all cards regardless of overlap order. They
              also live outside .room-card entirely (not just visually on
              top), since text nested inside a clipped card gets cut off once
              the card shrinks smaller than the text needs. */}
-          {roomBoxes.map((roomBox) => (
+          {displayBoxes.map((roomBox) => {
+            const renderRect = getRenderRect(roomBox)
+            return (
             <div
               key={`${roomBox.id}-label`}
               className="room-card-label"
               style={{
-                width: roomBox.width,
-                height: roomBox.height,
-                fontSize: Math.max(11, Math.min(roomBox.width, roomBox.height) / 8),
-                transform: `translate(${roomBox.x}px, ${roomBox.y}px)`,
-                ...(roomBox.color && !violatedIds.has(roomBox.id)
+                width: renderRect.width,
+                height: renderRect.height,
+                fontSize: Math.max(11, Math.min(renderRect.width, renderRect.height) / 8),
+                transform: `translate(${renderRect.x}px, ${renderRect.y}px)`,
+                ...(roomBox.color && !displayViolatedIds.has(roomBox.id)
                   ? { color: getContrastTextColor(roomBox.color) }
                   : {}),
               }}
@@ -1115,7 +1290,8 @@ function RoomCanvas({
                 <span className="room-card__area">{formatDimensions(roomBox, scale)}</span>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </>

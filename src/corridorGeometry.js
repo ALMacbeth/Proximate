@@ -255,6 +255,22 @@ export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, 
   return { xCandidates, yCandidates }
 }
 
+// Every node id in `nodeIds`, plus the endpoints of every edge in `edgeIds`
+// — the full set of corridor nodes a group move/drag needs to translate.
+// Shared by useCorridorDrag.js (dragging from a corridor element) and
+// useRoomDrag.js (dragging from a room, when corridor elements are also
+// selected) so both compute the same moving set the same way.
+export function corridorGroupNodeIds(corridorEdges, nodeIds, edgeIds) {
+  const ids = new Set(nodeIds)
+  edgeIds.forEach((edgeId) => {
+    const edge = corridorEdges.find((e) => e.id === edgeId)
+    if (!edge) return
+    ids.add(edge.nodeAId)
+    ids.add(edge.nodeBId)
+  })
+  return ids
+}
+
 // Degree (incident-edge count) of every node, keyed by node id — used to
 // decide whether a node needs a junction fill (degree >= 2) at all.
 export function computeNodeDegrees(edges) {

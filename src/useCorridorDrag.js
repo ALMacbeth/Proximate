@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { resolveCorridorTopology, constrainToAxis } from './corridorGeometry.js'
+import { useRef } from 'react'
+import { resolveCorridorTopology, constrainToAxis, corridorGroupNodeIds } from './corridorGeometry.js'
 
 // Dragging a corridor node or an edge's body. Because every edge just
 // references node ids, moving a node's x/y is all that's needed for every
@@ -7,23 +7,31 @@ import { resolveCorridorTopology, constrainToAxis } from './corridorGeometry.js'
 // a shared-endpoint move to the rest of the network falls out of the data
 // model for free, with no extra bookkeeping here.
 //
-// Selection is tracked as two Sets (nodes/edges) so the marquee tool
-// (useDragSel.js) can select several corridor elements at once. Clicking an
-// element already part of that multi-selection keeps the whole group
-// selected and drags all of it together; clicking anything else selects
-// just that one element and starts a single-element drag — the same
-// distinction useRoomDrag.js makes for rooms.
+// Selection is tracked as two Sets (nodes/edges), owned by the caller (not
+// this hook) so useRoomDrag.js can read/clear them too — that's what lets a
+// mixed room+corridor selection move together regardless of which element
+// started the drag. Clicking an element already part of a multi-selection
+// (rooms included) keeps the whole group selected and drags all of it
+// together; clicking anything else selects just that one element and starts
+// a single-element drag — the same distinction useRoomDrag.js makes for
+// rooms.
 export function useCorridorDrag({
   corridorNodes,
   setCorridorNodes,
   corridorEdges,
   setCorridorEdges,
+  selectedNodeIds,
+  setSelectedNodeIds,
+  selectedEdgeIds,
+  setSelectedEdgeIds,
+  roomBoxes,
+  setRoomBoxes,
+  selectedRoomIds,
+  setSelectedRoomIds,
   getLayoutPointerPosition,
   recordHistory,
 }) {
   const dragState = useRef(null)
-  const [selectedNodeIds, setSelectedNodeIds] = useState(() => new Set())
-  const [selectedEdgeIds, setSelectedEdgeIds] = useState(() => new Set())
 
   const toggleSelection = (setSelected, id) => {
     setSelected((prev) => {
@@ -34,7 +42,7 @@ export function useCorridorDrag({
     })
   }
 
-  const beginDrag = (event, movingNodeIds) => {
+  const beginDrag = (event, movingNodeIds, movingRoomIds = []) => {
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     recordHistory()
@@ -44,13 +52,20 @@ export function useCorridorDrag({
     corridorNodes.forEach((node) => {
       if (movingNodeIds.includes(node.id)) startPositions.set(node.id, { x: node.x, y: node.y })
     })
+    const roomStartPositions = new Map()
+    roomBoxes.forEach((box) => {
+      if (movingRoomIds.includes(box.id)) roomStartPositions.set(box.id, { x: box.x, y: box.y })
+    })
 
     dragState.current = {
       movingNodeIds,
       startPointerX: pointerStart.x,
       startPointerY: pointerStart.y,
       startPositions,
-      anchorNode: movingNodeIds.length === 1 ? findSingleNeighborAnchor(movingNodeIds[0]) : null,
+      roomStartPositions,
+      // Axis-constrain only applies to a lone node with no rooms riding
+      // along — a mixed group drag has no single "anchor" to constrain to.
+      anchorNode: movingNodeIds.length === 1 && movingRoomIds.length === 0 ? findSingleNeighborAnchor(movingNodeIds[0]) : null,
     }
   }
 
@@ -78,24 +93,11 @@ export function useCorridorDrag({
   }
 
   // A click on an element that's already part of a multi-selection (more
-  // than one element selected in total) keeps the group intact instead of
-  // collapsing it down to just the one clicked.
+  // than one element selected in total, rooms included) keeps the group
+  // intact instead of collapsing it down to just the one clicked.
   const isGroupMember = (type, id) => {
-    if (selectedNodeIds.size + selectedEdgeIds.size <= 1) return false
+    if (selectedRoomIds.size + selectedNodeIds.size + selectedEdgeIds.size <= 1) return false
     return type === 'node' ? selectedNodeIds.has(id) : selectedEdgeIds.has(id)
-  }
-
-  // Every currently-selected node, plus the endpoints of every currently
-  // selected edge — the full set of nodes a group drag needs to move.
-  const groupMovingNodeIds = () => {
-    const ids = new Set(selectedNodeIds)
-    selectedEdgeIds.forEach((edgeId) => {
-      const edge = corridorEdges.find((e) => e.id === edgeId)
-      if (!edge) return
-      ids.add(edge.nodeAId)
-      ids.add(edge.nodeBId)
-    })
-    return [...ids]
   }
 
   const handleNodePointerDown = (event, node) => {
@@ -105,12 +107,13 @@ export function useCorridorDrag({
       return
     }
     if (isGroupMember('node', node.id)) {
-      beginDrag(event, groupMovingNodeIds())
+      beginDrag(event, [...corridorGroupNodeIds(corridorEdges, selectedNodeIds, selectedEdgeIds)], [...selectedRoomIds])
       return
     }
     beginDrag(event, [node.id])
     setSelectedNodeIds(new Set([node.id]))
     setSelectedEdgeIds(new Set())
+    setSelectedRoomIds(new Set())
   }
 
   const handleEdgePointerDown = (event, edge) => {
@@ -120,12 +123,13 @@ export function useCorridorDrag({
       return
     }
     if (isGroupMember('edge', edge.id)) {
-      beginDrag(event, groupMovingNodeIds())
+      beginDrag(event, [...corridorGroupNodeIds(corridorEdges, selectedNodeIds, selectedEdgeIds)], [...selectedRoomIds])
       return
     }
     beginDrag(event, [edge.nodeAId, edge.nodeBId])
     setSelectedEdgeIds(new Set([edge.id]))
     setSelectedNodeIds(new Set())
+    setSelectedRoomIds(new Set())
   }
 
   const applyDelta = (event) => {
@@ -152,6 +156,16 @@ export function useCorridorDrag({
         return { ...node, x: start.x + deltaX, y: start.y + deltaY }
       }),
     )
+
+    if (state.roomStartPositions.size > 0) {
+      setRoomBoxes((prev) =>
+        prev.map((box) => {
+          const start = state.roomStartPositions.get(box.id)
+          if (!start) return box
+          return { ...box, x: start.x + deltaX, y: start.y + deltaY }
+        }),
+      )
+    }
   }
 
   const handleNodePointerMove = applyDelta
@@ -172,10 +186,6 @@ export function useCorridorDrag({
   const handleEdgePointerUp = endDrag
 
   return {
-    selectedNodeIds,
-    setSelectedNodeIds,
-    selectedEdgeIds,
-    setSelectedEdgeIds,
     handleNodePointerDown,
     handleNodePointerMove,
     handleNodePointerUp,

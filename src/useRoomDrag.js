@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { computeDragSnap } from './geometry.js'
+import { corridorGroupNodeIds, resolveCorridorTopology } from './corridorGeometry.js'
 
 const SNAP_THRESHOLD_PX = 8
 
@@ -8,19 +9,32 @@ const SNAP_THRESHOLD_PX = 8
 // tracked as a delta from the pointer's position at drag-start rather than a
 // per-room "grab offset", so the whole selection translates by the same
 // amount regardless of which room in the group was actually grabbed.
+//
+// When corridor nodes/edges are selected alongside rooms, dragging a room
+// moves them too (see corridorStartPositions below) — the mirror image of
+// what useCorridorDrag.js does when a corridor element starts the drag.
 export function useRoomDrag({
   roomBoxes,
   setRoomBoxes,
+  selectedIds,
+  setSelectedIds,
   getLayoutPointerPosition,
   zoom,
   recordHistory,
   corridorSnapCandidates,
   wallOffsetPx = 0,
+  corridorNodes,
+  setCorridorNodes,
+  corridorEdges,
+  setCorridorEdges,
+  selectedCorridorNodeIds,
+  setSelectedCorridorNodeIds,
+  selectedCorridorEdgeIds,
+  setSelectedCorridorEdgeIds,
 }) {
   const corridorX = corridorSnapCandidates?.xCandidates ?? []
   const corridorY = corridorSnapCandidates?.yCandidates ?? []
   const dragState = useRef(null)
-  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [snapGuides, setSnapGuides] = useState([])
 
   const handlePointerDown = (event, roomBox) => {
@@ -37,12 +51,22 @@ export function useRoomDrag({
       return
     }
 
-    // Clicking a room already part of a multi-selection keeps the group
-    // selected and drags all of them; clicking anything else selects just
-    // that one room and starts a single-room drag.
-    const isGroupMember = selectedIds.has(roomBox.id) && selectedIds.size > 1
+    // Clicking a room already part of a multi-selection (rooms and/or
+    // corridor elements) keeps the group selected and drags all of it;
+    // clicking anything else selects just that one room and starts a
+    // single-room drag.
+    const totalSelected = selectedIds.size + selectedCorridorNodeIds.size + selectedCorridorEdgeIds.size
+    const isGroupMember = selectedIds.has(roomBox.id) && totalSelected > 1
     const activeSelection = isGroupMember ? selectedIds : new Set([roomBox.id])
-    if (!isGroupMember) setSelectedIds(activeSelection)
+    const movingCorridorNodeIds = isGroupMember
+      ? corridorGroupNodeIds(corridorEdges, selectedCorridorNodeIds, selectedCorridorEdgeIds)
+      : new Set()
+
+    if (!isGroupMember) {
+      setSelectedIds(activeSelection)
+      setSelectedCorridorNodeIds(new Set())
+      setSelectedCorridorEdgeIds(new Set())
+    }
 
     recordHistory()
 
@@ -50,6 +74,10 @@ export function useRoomDrag({
     const startPositions = new Map()
     roomBoxes.forEach((box) => {
       if (activeSelection.has(box.id)) startPositions.set(box.id, { x: box.x, y: box.y })
+    })
+    const corridorStartPositions = new Map()
+    corridorNodes.forEach((node) => {
+      if (movingCorridorNodeIds.has(node.id)) corridorStartPositions.set(node.id, { x: node.x, y: node.y })
     })
 
     dragState.current = {
@@ -59,6 +87,7 @@ export function useRoomDrag({
       startPointerX: pointerStart.x,
       startPointerY: pointerStart.y,
       startPositions,
+      corridorStartPositions,
     }
   }
 
@@ -135,14 +164,34 @@ export function useRoomDrag({
         return { ...box, x: start.x + deltaX, y: start.y + deltaY }
       }),
     )
+
+    if (state.corridorStartPositions.size > 0) {
+      setCorridorNodes((prev) =>
+        prev.map((node) => {
+          const start = state.corridorStartPositions.get(node.id)
+          if (!start) return node
+          return { ...node, x: start.x + deltaX, y: start.y + deltaY }
+        }),
+      )
+    }
   }
 
   const handlePointerUp = (event) => {
     event.stopPropagation()
     event.currentTarget.releasePointerCapture(event.pointerId)
+    const state = dragState.current
     dragState.current = null
     setSnapGuides([])
+
+    // Corridor nodes just moved along with the room group — resolve the
+    // network the same way useCorridorDrag.js does at the end of its own
+    // drag, so a node dragged into a merge/crossing still gets one.
+    if (state?.corridorStartPositions.size > 0) {
+      const resolved = resolveCorridorTopology(corridorNodes, corridorEdges)
+      setCorridorNodes(resolved.nodes)
+      setCorridorEdges(resolved.edges)
+    }
   }
 
-  return { selectedIds, setSelectedIds, snapGuides, handlePointerDown, handlePointerMove, handlePointerUp }
+  return { snapGuides, handlePointerDown, handlePointerMove, handlePointerUp }
 }

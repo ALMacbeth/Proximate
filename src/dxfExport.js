@@ -1,3 +1,5 @@
+import { wrapText } from './textWrap.js'
+
 const ACI_RED = 1
 const ACI_GREEN = 3
 
@@ -43,16 +45,26 @@ function roomEntities(roomBox, scale, color) {
   })
 
   const areaLabel = Number.isNaN(roomBox.targetArea) ? '?' : roomBox.targetArea
-  const label = textEntity(
-    centerX - halfWidth,
-    centerY,
-    Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5)),
-    `${roomBox.roomName} (${areaLabel} m2)`,
-    'ROOMS TAGS',
-    color,
-  )
+  const textHeight = Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5))
 
-  return [...sides, label]
+  // Wrap the name to the room's own width — DXF TEXT entities don't wrap on
+  // their own, so a long name previously just ran straight off the room's
+  // right edge instead of dropping to a second line the way the on-canvas
+  // label does.
+  const nameLines = wrapText(roomBox.roomName, realWidth * 0.9, textHeight)
+  const lineSpacing = textHeight * 1.4
+
+  // DXF is Y-up, so the topmost line has the highest Y and each subsequent
+  // line steps downward — the reverse of a screen's top-to-bottom Y.
+  let y = centerY + (nameLines.length * lineSpacing) / 2
+  const labels = nameLines.map((line) => {
+    const entity = textEntity(centerX - halfWidth, y, textHeight, line, 'ROOMS TAGS', color)
+    y -= lineSpacing
+    return entity
+  })
+  labels.push(textEntity(centerX - halfWidth, y, textHeight * 0.85, `${areaLabel} m2`, 'ROOMS TAGS', color))
+
+  return [...sides, ...labels]
 }
 //don't plot distance lines (add a toggle for this option later)
 
