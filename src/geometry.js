@@ -1,5 +1,4 @@
 const MIN_SIZE = 48
-const MAX_SIZE = 200
 // Kept small: zoom lets the user compensate for a visually tiny room, so this
 // only needs to guard against clampWidthToArea's area/width blowing up near
 // zero — not guarantee comfortable clicking at the default zoom level. A
@@ -9,10 +8,21 @@ const MAX_SIZE = 200
 const MIN_DIMENSION = 6
 const GAP = 12
 
+// Anchored to the SMALLEST room, not the largest: sizing off the largest
+// room (so it fits a fixed max px size) forces scale down when a file has a
+// huge area range, which then pushes small rooms below MIN_SIZE and clamps
+// them all up to the same floor — visually different-sized rooms rendering
+// identically. Anchoring to the smallest room instead means every room's
+// pixel size stays truly proportional to its area and MIN_SIZE never needs
+// to override it; the tradeoff is a very large room can get large in pixels
+// when the file has wide area variance, but the canvas's zoom already goes
+// low enough (see usePanZoom's MIN_ZOOM) to pan/zoom out around that.
 export function computeScale(rooms) {
-  const areas = rooms.map((room) => (Number.isFinite(room.targetArea) && room.targetArea > 0 ? room.targetArea : 0))
-  const maxArea = Math.max(...areas, 1)
-  return MAX_SIZE / Math.sqrt(maxArea)
+  const areas = rooms
+    .map((room) => room.targetArea)
+    .filter((area) => Number.isFinite(area) && area > 0)
+  const minArea = areas.length > 0 ? Math.min(...areas) : 1
+  return MIN_SIZE / Math.sqrt(minArea)
 }
 
 // Builds the on-canvas box for each room: initial width/height are equal
@@ -74,6 +84,11 @@ export function formatDimensions(roomBox, scale) {
   const widthMeters = roomBox.width / scale
   const heightMeters = roomBox.height / scale
   return `${widthMeters.toFixed(2)} x ${heightMeters.toFixed(2)}`
+}
+
+export function formatArea(roomBox, scale) {
+  const areaMeters = roomBox.area / (scale * scale)
+  return `${areaMeters.toFixed(2)} m²`
 }
 
 export function getContrastTextColor(hex) {

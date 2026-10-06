@@ -33,7 +33,14 @@ export function usePanZoom(containerRef) {
       const pointerY = event.clientY - containerRect.top
 
       setView((prev) => {
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom - event.deltaY * ZOOM_SPEED))
+        // Multiplicative, not additive — a fixed step (prev.zoom -
+        // deltaY * ZOOM_SPEED) is a huge fraction of the range near
+        // MIN_ZOOM (0.02) and barely perceptible near MAX_ZOOM (3), so one
+        // scroll notch felt like it teleported straight to the floor while
+        // zoomed out. Scaling by a constant factor instead makes every
+        // notch change zoom by the same PERCENTAGE regardless of current
+        // level, which feels consistent across the whole 0.02–3 range.
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * Math.exp(-event.deltaY * ZOOM_SPEED)))
         // Solves for the pan offset that keeps the point under the pointer
         // fixed on screen as zoom changes, so zooming expands from wherever
         // the cursor is rather than a fixed corner.

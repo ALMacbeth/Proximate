@@ -1,7 +1,9 @@
-// Relative pull strength per signal tier — adjacency is the user's own
-// explicit data, so it's weighted well above anything inferred.
+// Relative pull strength per signal tier. The user's own explicit
+// adjacentRooms data sits above all of these (it's resolved and applied
+// separately, in useAutoArrange.js — see resolveAdjacencyTargets there for
+// why it needs to be re-resolved from live positions every tick rather than
+// computed once here alongside the rest).
 const TIER_STRENGTH = {
-  adjacency: 1,
   color: 0.5,
   keyword: 0.3,
   fuzzy: 0.15,
@@ -161,18 +163,18 @@ function jaccardSimilarity(setA, setB) {
 
 // One affinity entry per unordered room pair with a non-zero pull, picking
 // the single highest-priority signal that applies rather than summing tiers
-// — that's what makes this a hierarchy (an explicit adjacency rule always
-// wins) instead of several weak guesses drowning it out. `maxDistancePx` is
-// only set for the adjacency tier — it's a ceiling from the user's own data,
-// not a target distance, so the physics force treats it as a threshold
-// spring (only pulls once exceeded) rather than pulling to an exact length.
+// — that's what keeps color/keyword/fuzzy layered as a real hierarchy
+// instead of several weak guesses drowning each other out. (The
+// adjacentRooms rule — the strongest signal overall — isn't resolved here at
+// all; see the top-of-file note and useAutoArrange.js's
+// resolveAdjacencyTargets.)
 //
-// The keyword tier now has two forms: same-node (both rooms map to the same
+// The keyword tier has two forms: same-node (both rooms map to the same
 // space type — a flat attraction, as before) and cross-node (the two rooms
 // map to DIFFERENT nodes that have a TERM_RELATIONS edge between them —
 // strength can be positive (attract) or negative (repel) here, unlike every
 // other tier).
-export function computeAffinities(roomBoxes, scale) {
+export function computeAffinities(roomBoxes) {
   const affinities = []
   const tokensById = new Map(roomBoxes.map((box) => [box.id, tokenize(box.roomName || '')]))
   const categoryById = new Map(roomBoxes.map((box) => [box.id, findKeywordCategory(box.roomName || '')]))
@@ -181,20 +183,6 @@ export function computeAffinities(roomBoxes, scale) {
     for (let j = i + 1; j < roomBoxes.length; j += 1) {
       const a = roomBoxes[i]
       const b = roomBoxes[j]
-
-      // Adjacency is keyed by room name (not id) in the data model, and only
-      // needs to be declared from one side of the pair.
-      const maxDistanceMeters = a.adjacentRooms?.[b.roomName] ?? b.adjacentRooms?.[a.roomName]
-      if (Number.isFinite(maxDistanceMeters)) {
-        affinities.push({
-          aId: a.id,
-          bId: b.id,
-          tier: 'adjacency',
-          strength: TIER_STRENGTH.adjacency,
-          maxDistancePx: maxDistanceMeters * scale,
-        })
-        continue
-      }
 
       if (a.color && b.color && a.color === b.color) {
         affinities.push({ aId: a.id, bId: b.id, tier: 'color', strength: TIER_STRENGTH.color })

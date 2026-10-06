@@ -7,6 +7,7 @@ const ROOM_NAME_HEADER = 'Room Name'
 const TARGET_AREA_HEADER = 'Target Area'
 const ADJACENT_ROOMS_HEADER = 'Adjacent Rooms'
 const MIN_WIDTH_HEADER = 'Min Width'
+const COUNT_HEADER = 'Count'
 
 
 function parseAdjacentRooms(value) {
@@ -84,6 +85,7 @@ function parseWorkbook(arrayBuffer) {
     const targetAreaIndex = headerRow.indexOf(TARGET_AREA_HEADER)
     const adjacentRoomsIndex = headerRow.indexOf(ADJACENT_ROOMS_HEADER)
     const minWidthIndex = headerRow.indexOf(MIN_WIDTH_HEADER)
+    const countIndex = headerRow.indexOf(COUNT_HEADER)
 
     if (roomNameIndex === -1 || targetAreaIndex === -1 || adjacentRoomsIndex === -1) {
         throw new Error(
@@ -96,19 +98,43 @@ function parseWorkbook(arrayBuffer) {
     const rooms = {}
     let nextId = 0
     dataRows
-        .map((row, index) => ({ row, excelRowNumber: index + 2 }))
+        .map((row, index) => {
+            // No column at all, or a blank cell, both mean "just the one
+            // room" — only an explicit, parseable value changes the count.
+            const countValue = countIndex === -1 ? undefined : row[countIndex]
+            const parsedCount = countValue === '' || countValue === undefined ? 1 : parseFloat(countValue)
+            const count = Number.isFinite(parsedCount) ? Math.round(parsedCount) : 1
+            return { row, excelRowNumber: index + 2, targetArea: parseFloat(row[targetAreaIndex]), count }
+        })
         .filter(({ row }) => row[roomNameIndex] !== '' && row[roomNameIndex] !== undefined)
-        .forEach(({ row, excelRowNumber }) => {
+        // A missing/blank cell parses to NaN; a zero or negative area isn't
+        // a real room either — both would otherwise import as a degenerate,
+        // effectively invisible box, so skip the row entirely.
+        .filter(({ targetArea }) => Number.isFinite(targetArea) && targetArea > 0)
+        // A Count of 0 (or negative) means the row is excluded outright —
+        // distinct from a missing/blank value, which defaults to 1 above.
+        .filter(({ count }) => count > 0)
+        .forEach(({ row, excelRowNumber, targetArea, count }) => {
             const minWidthValue = minWidthIndex === -1 ? '' : row[minWidthIndex]
             const minWidth = minWidthValue === '' || minWidthValue === undefined ? undefined : parseFloat(minWidthValue)
             const roomNameCell = sheet[`${roomNameColumn}${excelRowNumber}`]
+            const adjacentRooms = parseAdjacentRooms(row[adjacentRoomsIndex])
+            const color = extractFillColor(roomNameCell)
 
-            rooms[`room-${nextId++}`] = {
-                roomName: String(row[roomNameIndex]),
-                targetArea: parseFloat(row[targetAreaIndex]),
-                adjacentRooms: parseAdjacentRooms(row[adjacentRoomsIndex]),
-                minWidth: Number.isFinite(minWidth) ? minWidth : undefined,
-                color: extractFillColor(roomNameCell),
+            // Each instance is its own independent room sharing the same
+            // name/area/adjacency/color — the app already treats repeated
+            // room names as distinct instances everywhere else (auto-arrange
+            // adjacency resolution, connection lines, keyword grouping all
+            // resolve by name), so this is exactly the data shape they
+            // already expect.
+            for (let i = 0; i < count; i += 1) {
+                rooms[`room-${nextId++}`] = {
+                    roomName: String(row[roomNameIndex]),
+                    targetArea,
+                    adjacentRooms,
+                    minWidth: Number.isFinite(minWidth) ? minWidth : undefined,
+                    color,
+                }
             }
         })
     return rooms
@@ -244,6 +270,7 @@ function App() {
                         </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "14px" }}>{"Other Room Name : Max Distance"}</code><br>
                         </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "14px" }}>{","}</code>)<br>
                         </br>If needed, you can add a <code style={{ fontSize: "14px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
+                        </br>You can also add a <code style={{ fontSize: "14px" }}>{COUNT_HEADER}</code> column to import multiple instances of the same row at once — leave it blank for a single room, or use <code style={{ fontSize: "14px" }}>{"0"}</code> to skip that row entirely.<br>
                         </br><br>
                         </br>Imported rooms will be displayed below as boxes which can be arranged by clicking and dragging.<br>
                         </br>These shapes can be adjusted in width and height while maintaining the target room area by clicking and dragging the handle in the bottom right corner.<br>

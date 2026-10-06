@@ -10,6 +10,7 @@ import {
   computeConnections,
   clampWidthToArea,
   formatDimensions,
+  formatArea,
   getContrastTextColor,
 } from './geometry.js'
 import {
@@ -182,6 +183,13 @@ function RoomCanvas({
 }) {
   const containerRef = useRef(null)
   const gestureModeRef = useRef(null)
+  // Clipboard for Ctrl+C/Ctrl+V room copy-paste — kept as a ref (not state)
+  // since copied content doesn't need to trigger a render, only to exist
+  // when a later paste reads it. pointerPositionRef tracks raw client
+  // coordinates so Ctrl+V (a keyboard event with no position of its own)
+  // can still paste at wherever the pointer currently is.
+  const copiedRoomsRef = useRef(null)
+  const pointerPositionRef = useRef(null)
   const [roomBoxes, setRoomBoxes] = useState([])
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
@@ -200,7 +208,8 @@ function RoomCanvas({
   const [pendingUnderlayImage, setPendingUnderlayImage] = useState(null)
   const [underlayError, setUnderlayError] = useState('')
   const [wallThicknessMm, setWallThicknessMm] = useState('150')
-  const [showWallOutlines, setShowWallOutlines] = useState(true)
+  const [showWallOutlines, setShowWallOutlines] = useState(false)
+  const [labelMode, setLabelMode] = useState('dimensions')
   // Selection lives here (not inside useRoomDrag/useCorridorDrag) so both
   // hooks can read and clear each other's selection — that's what lets a
   // mixed room+corridor selection move together regardless of which
@@ -211,6 +220,23 @@ function RoomCanvas({
 
   const { view, isPanning, resetView, getLayoutPointerPosition, handlePanPointerDown, handlePanPointerMove, handlePanPointerUp } =
     usePanZoom(containerRef)
+
+  // Tracks raw pointer position for paste-at-cursor, independent of
+  // everything else the canvas's own onPointerMove does. Attached in the
+  // CAPTURE phase (runs before bubbling, so before any child's
+  // stopPropagation() call — e.g. a room card's own drag handler) directly
+  // via addEventListener rather than a React prop, since a synthetic bubble
+  // listener on the container would miss pointer moves over a room/corridor
+  // that stop propagation on their way up.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const handlePointerMoveCapture = (event) => {
+      pointerPositionRef.current = { clientX: event.clientX, clientY: event.clientY }
+    }
+    container.addEventListener('pointermove', handlePointerMoveCapture, { capture: true })
+    return () => container.removeEventListener('pointermove', handlePointerMoveCapture, { capture: true })
+  }, [])
 
   const { recordHistory, clearHistory } = useUndoHistory({
     roomBoxes: [roomBoxes, setRoomBoxes],
@@ -555,6 +581,44 @@ function RoomCanvas({
     setSelectedIds(new Set())
   }
 
+  // Stores everything about each selected room except its id/x/y, plus each
+  // one's position RELATIVE to the group's own top-left corner — so a
+  // multi-room copy keeps its internal arrangement intact on paste instead
+  // of every room landing on exactly the same point.
+  const copySelectedRooms = () => {
+    if (selectedIds.size === 0) return
+    const selected = roomBoxes.filter((box) => selectedIds.has(box.id))
+    const minX = Math.min(...selected.map((box) => box.x))
+    const minY = Math.min(...selected.map((box) => box.y))
+    copiedRoomsRef.current = selected.map(({ id: _id, x, y, ...rest }) => ({
+      ...rest,
+      relX: x - minX,
+      relY: y - minY,
+    }))
+  }
+
+  // Pastes at the last known pointer position rather than, say, a fixed
+  // offset from the original — pointerPositionRef is only ever set while
+  // the pointer is over the canvas, so there's nowhere sensible to paste
+  // until the user has actually moved the mouse over it at least once.
+  const pasteCopiedRooms = () => {
+    const copied = copiedRoomsRef.current
+    if (!copied || copied.length === 0) return
+    const pointerPosition = pointerPositionRef.current
+    if (!pointerPosition) return
+
+    const { x: pasteX, y: pasteY } = getLayoutPointerPosition(pointerPosition)
+    recordHistory()
+    const newIds = new Set()
+    const pastedRooms = copied.map(({ relX, relY, ...rest }, index) => {
+      const id = `room-${Date.now()}-${index}`
+      newIds.add(id)
+      return { ...rest, id, x: pasteX + relX, y: pasteY + relY }
+    })
+    setRoomBoxes((prev) => [...prev, ...pastedRooms])
+    setSelectedIds(newIds)
+  }
+
   const deleteSelectedCorridorElements = () => {
     if (selectedCorridorNodeIds.size === 0 && selectedCorridorEdgeIds.size === 0) return
     recordHistory()
@@ -595,10 +659,23 @@ function RoomCanvas({
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (isArranging) return
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
       const target = event.target
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
       if (isEditingText) return
+
+      const isModifierPressed = event.ctrlKey || event.metaKey
+      const key = event.key.toLowerCase()
+
+      if (isModifierPressed && key === 'c') {
+        copySelectedRooms()
+        return
+      }
+      if (isModifierPressed && key === 'v') {
+        event.preventDefault()
+        pasteCopiedRooms()
+        return
+      }
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
       if (selectedCorridorNodeIds.size > 0 || selectedCorridorEdgeIds.size > 0) deleteSelectedCorridorElements()
       else deleteSelectedRooms()
     }
@@ -880,9 +957,29 @@ function RoomCanvas({
                   </button>
               )}
               {underlayError && (
-                  <p className="underlay_error" style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 10 }}>
+                  <p className="underlay_error" style={{ position: 'absolute', bottom: 54, right: 12, zIndex: 10 }}>
                       {underlayError}
                   </p>
+              )}
+              {roomBoxes.length > 0 && (
+                  <label
+                      className="label_mode_toggle"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 10 }}
+                      title="Switch room labels between dimensions and area"
+                  >
+                      <span className={labelMode === 'dimensions' ? 'label_mode_toggle__option--active' : ''}>
+                          Dimensions
+                      </span>
+                      <input
+                          type="checkbox"
+                          role="switch"
+                          checked={labelMode === 'area'}
+                          onChange={(e) => setLabelMode(e.target.checked ? 'area' : 'dimensions')}
+                      />
+                      <span className="label_mode_toggle__track" aria-hidden="true" />
+                      <span className={labelMode === 'area' ? 'label_mode_toggle__option--active' : ''}>Area</span>
+                  </label>
               )}
               <div
                   className="wall_thickness_control"
@@ -1342,7 +1439,9 @@ function RoomCanvas({
                       </>
                 </div>
               ) : (
-                <span className="room-card__area">{formatDimensions(roomBox, scale)}</span>
+                <span className="room-card__area">
+                  {labelMode === 'area' ? formatArea(roomBox, scale) : formatDimensions(roomBox, scale)}
+                </span>
               )}
             </div>
             )
