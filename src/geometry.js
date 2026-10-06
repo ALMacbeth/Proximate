@@ -25,6 +25,21 @@ export function computeScale(rooms) {
   return MIN_SIZE / Math.sqrt(minArea)
 }
 
+// A saved layout stores pixel sizes at whatever scale was in effect when it
+// was saved, and every room records area = targetArea * scale^2, so that
+// scale can be read back exactly. Recomputing it from targetArea instead
+// would silently disagree with the saved pixels whenever computeScale's
+// formula has changed since the file was written. Returns null when no room
+// carries both values.
+export function recoverScaleFromRooms(rooms) {
+  const ratios = rooms
+    .filter((room) => Number.isFinite(room.area) && room.area > 0 && Number.isFinite(room.targetArea) && room.targetArea > 0)
+    .map((room) => Math.sqrt(room.area / room.targetArea))
+    .sort((a, b) => a - b)
+  if (ratios.length === 0) return null
+  return ratios[Math.floor(ratios.length / 2)]
+}
+
 // Builds the on-canvas box for each room: initial width/height are equal
 // (a square) sized so area on screen is proportional to targetArea. `area`
 // is recorded as the room's true physical area (targetArea * scale^2), not

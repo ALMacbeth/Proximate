@@ -5,6 +5,7 @@ import { buildSvg } from './svgExport.js'
 import { downloadFile } from './download.js'
 import {
   computeScale,
+  recoverScaleFromRooms,
   computeRoomBoxes,
   packRoomBoxes,
   computeConnections,
@@ -485,14 +486,6 @@ function RoomCanvas({
       resetView()
       return
     }
-    const computedScale = computeScale(rooms)
-    setScale(computedScale)
-    setCorridorNodes(initialCorridorNodes ?? [])
-    setCorridorEdges(initialCorridorEdges ?? [])
-    // Older exports predate this field, so a missing value falls back to
-    // the same default a brand-new session starts with.
-    setWallThicknessMm(Number.isFinite(initialWallThicknessMm) ? String(initialWallThicknessMm) : '150')
-
     // A previously exported layout JSON already carries x/y/width/height (and
     // area) for every room, so re-importing it should restore that exact
     // arrangement instead of re-running the fresh-import packing layout.
@@ -503,6 +496,16 @@ function RoomCanvas({
         Number.isFinite(room.width) &&
         Number.isFinite(room.height),
     )
+
+    // Saved pixel sizes are only meaningful at the scale they were saved
+    // with, so restore that scale rather than recomputing a fresh one.
+    const computedScale = (hasSavedLayout && recoverScaleFromRooms(rooms)) || computeScale(rooms)
+    setScale(computedScale)
+    setCorridorNodes(initialCorridorNodes ?? [])
+    setCorridorEdges(initialCorridorEdges ?? [])
+    // Older exports predate this field, so a missing value falls back to
+    // the same default a brand-new session starts with.
+    setWallThicknessMm(Number.isFinite(initialWallThicknessMm) ? String(initialWallThicknessMm) : '150')
 
     if (hasSavedLayout) {
       setRoomBoxes(rooms.map((room) => ({ ...room })))
