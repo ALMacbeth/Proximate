@@ -1,18 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { RoomCard, RoomLabel } from './RoomCard.jsx'
+import RoomPropertiesMenu from './RoomPropertiesMenu.jsx'
 import { HexColorPicker } from 'react-colorful'
 import { buildDxf } from './dxfExport.js'
 import { buildSvg } from './svgExport.js'
 import { downloadFile } from './download.js'
 import {
   computeScale,
+  describeAreaSpread,
   recoverScaleFromRooms,
   computeRoomBoxes,
   packRoomBoxes,
   computeConnections,
   clampWidthToArea,
-  formatDimensions,
-  formatArea,
-  getContrastTextColor,
 } from './geometry.js'
 import {
   computeEdgeOffsetPolygon,
@@ -35,6 +35,14 @@ import { renderPdfFirstPageToImage, pointsToMeters } from './pdfUnderlay.js'
 
 const NODE_HIT_RADIUS_SCREEN_PX = 10
 const PDF_FILE_PATTERN = /\.pdf$/i
+// Approximate rendered size of the right-click properties popup, used only to
+// keep it fully inside the canvas when opened near the right/bottom edge.
+const ROOM_MENU_WIDTH_PX = 230
+const ROOM_MENU_HEIGHT_PX = 220
+// Rooms are drawn in true proportion, so an area spread past this is almost
+// always a unit/typo error in one row — flag it rather than silently
+// producing a canvas thousands of pixels across.
+const MAX_AREA_SPREAD_RATIO = 10000
 
 function AddNewConnection({ onApply, onClose }) {
     const [toRoomId, setToRoomId] = useState('')
@@ -91,7 +99,8 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
     }
     const handleSubmitNewRoom = (e) => {
         e.preventDefault()
-        const targetAreaMeters = Number.parseFloat(targetArea) || 1
+        const parsedArea = Number.parseFloat(targetArea)
+        const targetAreaMeters = parsedArea > 0 ? parsedArea : 1
         const area = targetAreaMeters * scale * scale
 
         const id = `room-${Date.now()}`
@@ -132,12 +141,12 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
                 <span style={{ position: 'relative', display: 'inline-block' }}>
                 <button
                     type="button"
-                    className={`color-swatch${color === color ? ' color-swatch--selected' : ''}`}
+                    className={`color-swatch${color ? ' color-swatch--selected' : ''}`}
                     style={{ backgroundColor: color }}
-
+                    aria-label="Choose room colour"
                     onClick={() => setShowColorSwatches(true)}
                 />
-                {existingColors.length > 0 && showColorSwatches && (
+                {showColorSwatches && (
                     <div className="color-swatches" style={{ position: 'absolute', top: '100%', display:'flex' , gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}>
                         {existingColors.map((swatch) => (
                             <button
@@ -158,8 +167,8 @@ function AddRoomMenu({ onAdd, onClose, existingColors, scale }) {
                             {showCustomPicker && (
                                 <div className="custom-picker-panel" style={{ position: 'absolute', top: '100%' }}>
                                     <HexColorPicker color={draftColor} onChange={setDraftColor} />
-                                    <button onClick={handleAcceptSwatch}>Accept</button>
-                                    <button onClick={() => setShowCustomPicker(false)}>Cancel</button>
+                                    <button type="button" onClick={handleAcceptSwatch}>Accept</button>
+                                    <button type="button" onClick={() => setShowCustomPicker(false)}>Cancel</button>
                                 </div>
                             )}
 
@@ -195,7 +204,9 @@ function RoomCanvas({
   const [scale, setScale] = useState(1)
   const [editingId, setEditingId] = useState(null)
     const [editValue, setEditValue] = useState('')
-    const [editAreaValue, setEditAreaValue] = useState('')
+    const [editHeightValue, setEditHeightValue] = useState('')
+    const lastEditedFieldRef = useRef('width')
+    const [roomMenu, setRoomMenu] = useState(null)
   const [showAddRoomMenu, setShowAddRoomMenu] = useState(false)
   const [showAddConnectionMenu, setShowAddConnectionMenu] = useState(false)
   const [activeTool, setActiveTool] = useState('select')
@@ -211,6 +222,7 @@ function RoomCanvas({
   const [wallThicknessMm, setWallThicknessMm] = useState('150')
   const [showWallOutlines, setShowWallOutlines] = useState(false)
   const [labelMode, setLabelMode] = useState('dimensions')
+  const [scaleWarning, setScaleWarning] = useState('')
   // Selection lives here (not inside useRoomDrag/useCorridorDrag) so both
   // hooks can read and clear each other's selection — that's what lets a
   // mixed room+corridor selection move together regardless of which
@@ -253,7 +265,10 @@ function RoomCanvas({
   const wallOffsetPx =
     Number.isFinite(wallThicknessValue) && wallThicknessValue > 0 ? ((wallThicknessValue / 1000) * scale) / 2 : 0
 
-  const corridorSnapCandidates = computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx)
+  const corridorSnapCandidates = useMemo(
+    () => computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx),
+    [corridorNodes, corridorEdges, scale, wallOffsetPx],
+  )
 
   const {
     snapGuides: dragSnapGuides,
@@ -476,6 +491,14 @@ function RoomCanvas({
     // A new room set makes any in-progress arrange preview meaningless —
     // its simulation nodes reference the old rooms.
     cancelAutoArrange()
+    setRoomMenu(null)
+
+    const spread = describeAreaSpread(rooms, MAX_AREA_SPREAD_RATIO)
+    setScaleWarning(
+      spread
+        ? `Room sizes span ${Math.round(spread.ratio).toLocaleString()}:1 — "${spread.smallest.roomName}" is ${spread.smallest.targetArea} m² next to "${spread.largest.roomName}" at ${spread.largest.targetArea} m². Check for a unit or typing error; the largest rooms will be very big on screen, so zoom out to see them.`
+        : '',
+    )
 
     if (rooms.length === 0) {
       setRoomBoxes([])
@@ -702,59 +725,114 @@ function RoomCanvas({
     gestureModeRef.current = null
   }
 
+  const getMinWidthPx = (box) => (Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0)
+
   const handleRoomDoubleClick = (event, roomBox) => {
     event.stopPropagation()
+    setRoomMenu(null)
     if (editingId === roomBox.id) return
+    lastEditedFieldRef.current = 'width'
     setEditingId(roomBox.id)
-      setEditValue((roomBox.width / scale).toFixed(2))
-      setEditAreaValue((roomBox.area / (scale * scale)).toFixed(2))
+    setEditValue((roomBox.width / scale).toFixed(2))
+    setEditHeightValue((roomBox.height / scale).toFixed(2))
   }
 
-  const commitWidthEdit = (id) => {
-    const widthMeters = parseFloat(editValue)
-    if (Number.isFinite(widthMeters) && widthMeters > 0) {
+  // Width and height are linked through the room's fixed area: editing one
+  // immediately recomputes the other so the pair always describes the same
+  // area (clamped by the room's minimum dimension, like a resize drag). The
+  // field the user typed in stays exactly as typed.
+  const handleEditWidthChange = (value) => {
+    lastEditedFieldRef.current = 'width'
+    setEditValue(value)
+    const box = roomBoxes.find((candidate) => candidate.id === editingId)
+    const widthMeters = parseFloat(value)
+    if (!box || !(widthMeters > 0)) return
+    const { height } = clampWidthToArea(widthMeters * scale, box.area, getMinWidthPx(box))
+    setEditHeightValue((height / scale).toFixed(2))
+  }
+
+  const handleEditHeightChange = (value) => {
+    lastEditedFieldRef.current = 'height'
+    setEditHeightValue(value)
+    const box = roomBoxes.find((candidate) => candidate.id === editingId)
+    const heightMeters = parseFloat(value)
+    if (!box || !(heightMeters > 0)) return
+    const { width } = clampWidthToArea(box.area / (heightMeters * scale), box.area, getMinWidthPx(box))
+    setEditValue((width / scale).toFixed(2))
+  }
+
+  // Commits from whichever field was typed in last, using its raw value (not
+  // the rounded text shown in the other field), so e.g. typing a height of
+  // 3 gives exactly 3 rather than a height recomputed from a rounded width.
+  const commitSizeEdit = (id) => {
+    const fromHeight = lastEditedFieldRef.current === 'height'
+    const typedMeters = parseFloat(fromHeight ? editHeightValue : editValue)
+    if (Number.isFinite(typedMeters) && typedMeters > 0) {
       recordHistory()
       setRoomBoxes((prev) =>
         prev.map((box) => {
           if (box.id !== id) return box
-          const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
-          const { width, height } = clampWidthToArea(widthMeters * scale, box.area, minWidthPx)
+          const desiredWidth = fromHeight ? box.area / (typedMeters * scale) : typedMeters * scale
+          const { width, height } = clampWidthToArea(desiredWidth, box.area, getMinWidthPx(box))
           return { ...box, width, height }
         }),
       )
     }
     setEditingId(null)
-    }
+  }
 
-    const commitAreaEdit = (id) => {
-        const areaMeters = parseFloat(editAreaValue)
-        if (Number.isFinite(areaMeters) && areaMeters > 0) {
-            recordHistory()
-            setRoomBoxes((prev) =>
-                prev.map((box) => {
-                    if (box.id !== id) return box
+  const handleRoomContextMenu = (event, roomBox) => {
+    if (isArranging) return
+    event.preventDefault()
+    event.stopPropagation()
+    const container = containerRef.current
+    const containerRect = container.getBoundingClientRect()
+    // Absolute positioning is relative to the padding box, so the container's
+    // border (clientLeft/clientTop) has to come out of the pointer offset.
+    const pointerLeft = event.clientX - containerRect.left - container.clientLeft
+    const pointerTop = event.clientY - containerRect.top - container.clientTop
+    setEditingId(null)
+    setRoomMenu({
+      id: roomBox.id,
+      left: Math.max(0, Math.min(pointerLeft, container.clientWidth - ROOM_MENU_WIDTH_PX)),
+      top: Math.max(0, Math.min(pointerTop, container.clientHeight - ROOM_MENU_HEIGHT_PX)),
+    })
+  }
 
-                    const area = areaMeters * scale * scale
-                    const widthMeters = parseFloat(editValue)
-                    const desiredWidth = Number.isFinite(widthMeters) && widthMeters > 0 ? widthMeters * scale : box.width
-                    const minWidthPx = Number.isFinite(box.minWidth) && box.minWidth > 0 ? box.minWidth * scale : 0
-                    const { width, height } = clampWidthToArea(desiredWidth, area, minWidthPx)
+  const applyRoomProperties = (id, { areaMeters, minWidthMeters }) => {
+    recordHistory()
+    setRoomBoxes((prev) =>
+      prev.map((box) => {
+        if (box.id !== id) return box
+        const area = areaMeters * scale * scale
+        const minWidthPx = minWidthMeters ? minWidthMeters * scale : 0
+        const { width, height } = clampWidthToArea(box.width, area, minWidthPx)
+        return { ...box, targetArea: areaMeters, area, minWidth: minWidthMeters, width, height }
+      }),
+    )
+  }
 
-                    return { ...box, targetArea: areaMeters, area, width, height }
-                }),
-            )
-        }
-        setEditingId(null)
-    }
-
-  const connections = computeConnections(roomBoxes, scale)
-  const violatedIds = new Set(connections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id]))
+  // Memoised so pans, zooms and selection changes (which re-render this
+  // component every frame but don't touch rooms) skip the connection maths.
+  // The committed connections only feed the exports and the normal view, so
+  // they're skipped entirely while a preview is running.
+  const connections = useMemo(
+    () => (isArranging ? [] : computeConnections(roomBoxes, scale)),
+    [roomBoxes, scale, isArranging],
+  )
+  const violatedIds = useMemo(
+    () => new Set(connections.filter((c) => c.violated).flatMap((c) => [c.from.id, c.to.id])),
+    [connections],
+  )
 
   // Recomputed against the live preview while arranging, purely for visual
   // feedback (so you can see adjacency violations resolve as the physics
   // settles) — exports and the DXF/SVG buttons still use the committed
   // roomBoxes/connections above, since nothing here is real until accept().
-  const displayConnections = isArranging ? computeConnections(displayBoxes, scale) : connections
+  const displayConnections = useMemo(
+    () => (isArranging ? computeConnections(previewBoxes, scale) : connections),
+    [isArranging, previewBoxes, scale, connections],
+  )
 
   // computeConnections' own `violated` flag is rectDistance-based (the true
   // rectangle-to-rectangle gap) — correct for the normal view, but wrong
@@ -780,13 +858,129 @@ function RoomCanvas({
     return edgeDistance > maxDistanceMeters * scale
   }
 
-  const displayViolatedIds = isArranging
-    ? new Set(displayConnections.filter((c) => isConnectionViolated(c)).flatMap((c) => [c.from.id, c.to.id]))
-    : violatedIds
+  const displayViolatedIds = useMemo(
+    () =>
+      isArranging
+        ? new Set(displayConnections.filter((c) => isConnectionViolated(c)).flatMap((c) => [c.from.id, c.to.id]))
+        : violatedIds,
+    // isConnectionViolated is recreated each render but only reads
+    // isCirclePreview and scale, which are listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isArranging, displayConnections, violatedIds, isCirclePreview, scale],
+  )
 
-  const nodeById = new Map(corridorNodes.map((node) => [node.id, node]))
-  const nodeDegrees = computeNodeDegrees(corridorEdges)
+  // All the corridor geometry (offset polygons, wall outlines, junction
+  // fills) depends only on the corridor data and scale, so it's computed once
+  // per change rather than on every pan/zoom frame. Junction widths are
+  // gathered in one pass over the edges instead of re-filtering every edge
+  // for every node.
+  const corridorGeometry = useMemo(() => {
+    const nodeById = new Map(corridorNodes.map((node) => [node.id, node]))
+    const nodeDegrees = computeNodeDegrees(corridorEdges)
+    const incidentWidthsByNode = new Map()
+    const edgeShapes = []
+    const wallShapes = []
+    const drawWalls = wallOffsetPx > 0 && showWallOutlines
+
+    corridorEdges.forEach((edge) => {
+      const widthPx = edge.widthMeters * scale
+      ;[edge.nodeAId, edge.nodeBId].forEach((nodeId) => {
+        if (!incidentWidthsByNode.has(nodeId)) incidentWidthsByNode.set(nodeId, [])
+        incidentWidthsByNode.get(nodeId).push(widthPx)
+      })
+
+      const nodeA = nodeById.get(edge.nodeAId)
+      const nodeB = nodeById.get(edge.nodeBId)
+      if (!nodeA || !nodeB) return
+      const polygon = computeEdgeOffsetPolygon(nodeA, nodeB, widthPx)
+      if (polygon) edgeShapes.push({ edge, points: polygon.map((p) => `${p.x},${p.y}`).join(' ') })
+      if (drawWalls) {
+        // The corridor's own offset polygon already represents its full
+        // width, so growing that same width by a further wall thickness on
+        // top puts this outline half a wall's thickness beyond each long edge.
+        const outline = computeEdgeOffsetPolygon(nodeA, nodeB, widthPx + wallOffsetPx * 2)
+        if (outline) wallShapes.push({ id: edge.id, points: outline.map((p) => `${p.x},${p.y}`).join(' ') })
+      }
+    })
+
+    const junctions = corridorNodes.flatMap((node) => {
+      if ((nodeDegrees.get(node.id) || 0) < 2) return []
+      const fill = computeJunctionFill(node, incidentWidthsByNode.get(node.id) || [])
+      return fill ? [{ id: node.id, fill }] : []
+    })
+
+    return { nodeById, edgeShapes, wallShapes, junctions }
+  }, [corridorNodes, corridorEdges, scale, wallOffsetPx, showWallOutlines])
+  const nodeById = corridorGeometry.nodeById
   const nodeHitRadius = NODE_HIT_RADIUS_SCREEN_PX / view.zoom
+
+  // Every room card/label handler goes through one stable wrapper that calls
+  // the latest closure, so the memoised RoomCard/RoomLabel components never
+  // see a changed callback prop (and so only re-render when their own room's
+  // data changes). Each looks the room up by id at event time.
+  const getDisplayBox = (id) => displayBoxes.find((box) => box.id === id)
+  const roomHandlersRef = useRef({})
+  roomHandlersRef.current = {
+    pointerDown: (event, id) => {
+      // Only the primary button drags/selects; right-click opens the
+      // properties menu and middle-click is left to pan the canvas.
+      if (!isArranging && event.button !== 0) return
+      const box = getDisplayBox(id)
+      if (!box) return
+      if (isArranging) handleArrangeRoomPointerDown(event, box)
+      else handlePointerDown(event, box)
+    },
+    pointerMove: (event, id) => {
+      const box = getDisplayBox(id)
+      if (!box) return
+      if (isArranging) handleArrangeRoomPointerMove(event, box)
+      else handlePointerMove(event)
+    },
+    pointerUp: (event, id) => {
+      const box = getDisplayBox(id)
+      if (!box) return
+      if (isArranging) handleArrangeRoomPointerUp(event, box)
+      else handlePointerUp(event)
+    },
+    doubleClick: (event, id) => {
+      const box = getDisplayBox(id)
+      if (box && !isArranging) handleRoomDoubleClick(event, box)
+    },
+    resizePointerDown: (event, id) => {
+      const box = getDisplayBox(id)
+      if (box) handleResizePointerDown(event, box)
+    },
+    resizePointerMove: (event, id) => handleResizePointerMove(event, id),
+    resizePointerUp: (event, id) => handleResizePointerUp(event, id),
+    contextMenu: (event, id) => {
+      const box = getDisplayBox(id)
+      if (box) handleRoomContextMenu(event, box)
+    },
+    editHeightChange: handleEditHeightChange,
+    editWidthChange: handleEditWidthChange,
+    commitEdit: commitSizeEdit,
+    cancelEdit: () => setEditingId(null),
+  }
+  const roomHandlers = useMemo(
+    () =>
+      Object.fromEntries(
+        [
+          'pointerDown',
+          'pointerMove',
+          'pointerUp',
+          'doubleClick',
+          'resizePointerDown',
+          'resizePointerMove',
+          'resizePointerUp',
+          'contextMenu',
+          'editHeightChange',
+          'editWidthChange',
+          'commitEdit',
+          'cancelEdit',
+        ].map((name) => [name, (...args) => roomHandlersRef.current[name](...args)]),
+      ),
+    [],
+  )
 
   const handleCorridorEdgeDoubleClick = (event, edge) => {
     event.stopPropagation()
@@ -964,6 +1158,19 @@ function RoomCanvas({
                       {underlayError}
                   </p>
               )}
+              {scaleWarning && (
+                  <p
+                      className="scale_warning"
+                      role="status"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{ position: 'absolute', bottom: 54, left: 12, zIndex: 10 }}
+                  >
+                      <span>{scaleWarning}</span>
+                      <button type="button" aria-label="Dismiss warning" onClick={() => setScaleWarning('')}>
+                          ×
+                      </button>
+                  </p>
+              )}
               {roomBoxes.length > 0 && (
                   <label
                       className="label_mode_toggle"
@@ -1106,6 +1313,24 @@ function RoomCanvas({
                   />
               )}
 
+        {roomMenu &&
+          (() => {
+            const menuBox = roomBoxes.find((box) => box.id === roomMenu.id)
+            if (!menuBox) return null
+            return (
+              <RoomPropertiesMenu
+                key={roomMenu.id}
+                left={roomMenu.left}
+                top={roomMenu.top}
+                roomName={menuBox.roomName}
+                initialArea={(menuBox.area / (scale * scale)).toFixed(2)}
+                initialMinWidth={Number.isFinite(menuBox.minWidth) && menuBox.minWidth > 0 ? String(menuBox.minWidth) : ''}
+                onApply={(values) => applyRoomProperties(roomMenu.id, values)}
+                onClose={() => setRoomMenu(null)}
+              />
+            )
+          })()}
+
         <div
           className="canvas-content"
           style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})` }}
@@ -1150,20 +1375,9 @@ function RoomCanvas({
                   className="wall-outline"
                 />
               ))}
-              {corridorEdges.map((edge) => {
-                const nodeA = nodeById.get(edge.nodeAId)
-                const nodeB = nodeById.get(edge.nodeBId)
-                if (!nodeA || !nodeB) return null
-                // Same idea as the room outline above: the corridor's own
-                // offset polygon (drawn elsewhere) already represents its
-                // full width, so growing that same width by a further wall
-                // thickness on top puts this outline exactly half a wall's
-                // thickness beyond each of its two long edges.
-                const outline = computeEdgeOffsetPolygon(nodeA, nodeB, edge.widthMeters * scale + wallOffsetPx * 2)
-                if (!outline) return null
-                const points = outline.map((p) => `${p.x},${p.y}`).join(' ')
-                return <polygon key={`wall-${edge.id}`} points={points} className="wall-outline" />
-              })}
+              {corridorGeometry.wallShapes.map(({ id, points }) => (
+                <polygon key={`wall-${id}`} points={points} className="wall-outline" />
+              ))}
             </svg>
           )}
           <svg className="canvas-lines">
@@ -1192,13 +1406,7 @@ function RoomCanvas({
             ))}
           </svg>
           <svg className="canvas-corridors">
-            {corridorEdges.map((edge) => {
-              const nodeA = nodeById.get(edge.nodeAId)
-              const nodeB = nodeById.get(edge.nodeBId)
-              if (!nodeA || !nodeB) return null
-              const polygon = computeEdgeOffsetPolygon(nodeA, nodeB, edge.widthMeters * scale)
-              if (!polygon) return null
-              const points = polygon.map((p) => `${p.x},${p.y}`).join(' ')
+            {corridorGeometry.edgeShapes.map(({ edge, points }) => {
               const isSelected = selectedCorridorEdgeIds.has(edge.id)
               return (
                 <polygon
@@ -1222,27 +1430,12 @@ function RoomCanvas({
                 />
               )
             })}
-            {corridorNodes
-              .filter((node) => (nodeDegrees.get(node.id) || 0) >= 2)
-              .map((node) => {
-                const incidentWidthsPx = corridorEdges
-                  .filter((edge) => edge.nodeAId === node.id || edge.nodeBId === node.id)
-                  .map((edge) => edge.widthMeters * scale)
-                const fill = computeJunctionFill(node, incidentWidthsPx)
-                if (!fill) return null
-                // Purely decorative (pointer-events: none in CSS) — the
-                // dedicated hit-target circle rendered with every node below
-                // handles selection/drag uniformly regardless of degree.
-                return (
-                  <circle
-                    key={`junction-${node.id}`}
-                    cx={fill.cx}
-                    cy={fill.cy}
-                    r={fill.r}
-                    className="corridor-junction-fill"
-                  />
-                )
-              })}
+            {/* Purely decorative (pointer-events: none in CSS) — the
+               dedicated hit-target circle rendered with every node below
+               handles selection/drag uniformly regardless of degree. */}
+            {corridorGeometry.junctions.map(({ id, fill }) => (
+              <circle key={`junction-${id}`} cx={fill.cx} cy={fill.cy} r={fill.r} className="corridor-junction-fill" />
+            ))}
             {corridorNodes.map((node) => (
               // A larger invisible hit-target circle, rendered on top of
               // every edge/junction fill, so a click anywhere near a node
@@ -1332,121 +1525,58 @@ function RoomCanvas({
           {displayBoxes.map((roomBox) => {
             const renderRect = getRenderRect(roomBox)
             return (
-            <div
-              key={roomBox.id}
-              className={`room-card${displayViolatedIds.has(roomBox.id) ? ' room-card--violated' : ''}${selectedIds.has(roomBox.id) ? ' room-card--selected' : ''}${isArranging ? ' room-card--arranging' : ''}${isCirclePreview ? ' room-card--circle' : ''}`}
-              style={{
-                width: renderRect.width,
-                height: renderRect.height,
-                transform: `translate(${renderRect.x}px, ${renderRect.y}px)`,
-                ...(roomBox.color && !displayViolatedIds.has(roomBox.id) ? { backgroundColor: roomBox.color } : {}),
-              }}
-              onPointerDown={(event) =>
-                isArranging ? handleArrangeRoomPointerDown(event, roomBox) : handlePointerDown(event, roomBox)
-              }
-              onPointerMove={(event) => (isArranging ? handleArrangeRoomPointerMove(event, roomBox) : handlePointerMove(event))}
-              onPointerUp={(event) => (isArranging ? handleArrangeRoomPointerUp(event, roomBox) : handlePointerUp(event))}
-              onDoubleClick={(event) => {
-                if (!isArranging) handleRoomDoubleClick(event, roomBox)
-              }}
-            >
-              {!isArranging && (
-                <div
-                  className="room-card__resize-handle"
-                  onPointerDown={(event) => handleResizePointerDown(event, roomBox)}
-                  onPointerMove={(event) => handleResizePointerMove(event, roomBox.id)}
-                  onPointerUp={(event) => handleResizePointerUp(event, roomBox.id)}
-                >
-                  <svg
-                            className="room-card__resize-icon"
-                            viewBox="0 0 24 24"
-                            width="14"
-                            height="14"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-
-
-                  >
-                    <path d="M3 12H21M3 12L7 8M3 12L7 16M21 12L17 8M21 12L17 16" />
-                  </svg>
-                </div>
-              )}
-            </div>
+              <RoomCard
+                key={roomBox.id}
+                id={roomBox.id}
+                x={renderRect.x}
+                y={renderRect.y}
+                width={renderRect.width}
+                height={renderRect.height}
+                color={roomBox.color}
+                isViolated={displayViolatedIds.has(roomBox.id)}
+                isSelected={selectedIds.has(roomBox.id)}
+                isArranging={isArranging}
+                isCircle={isCirclePreview}
+                onPointerDown={roomHandlers.pointerDown}
+                onPointerMove={roomHandlers.pointerMove}
+                onPointerUp={roomHandlers.pointerUp}
+                onDoubleClick={roomHandlers.doubleClick}
+                onContextMenu={roomHandlers.contextMenu}
+                onResizePointerDown={roomHandlers.resizePointerDown}
+                onResizePointerMove={roomHandlers.resizePointerMove}
+                onResizePointerUp={roomHandlers.resizePointerUp}
+              />
             )
           })}
           {/* Rendered as a second pass, after every room card, so labels
-             always stack above all cards regardless of overlap order. They
-             also live outside .room-card entirely (not just visually on
-             top), since text nested inside a clipped card gets cut off once
-             the card shrinks smaller than the text needs. */}
+             always stack above all cards regardless of overlap order. */}
           {displayBoxes.map((roomBox) => {
             const renderRect = getRenderRect(roomBox)
+            const isEditing = editingId === roomBox.id
             return (
-            <div
-              key={`${roomBox.id}-label`}
-              className="room-card-label"
-              style={{
-                width: renderRect.width,
-                height: renderRect.height,
-                fontSize: Math.max(11, Math.min(renderRect.width, renderRect.height) / 8),
-                transform: `translate(${renderRect.x}px, ${renderRect.y}px)`,
-                ...(roomBox.color && !displayViolatedIds.has(roomBox.id)
-                  ? { color: getContrastTextColor(roomBox.color) }
-                  : {}),
-              }}
-            >
-              <span className="room-card__name">{roomBox.roomName}</span>
-                  {editingId === roomBox.id ? (
-                      <div>
-                      <>
-                  <label className="room-card__dimension-label">
-                  Set Area:
-                  <input
-                    type="number"
-                    className="room-card__area-input"
-                    value={editAreaValue}
-                    step="0.01"
-                    min="0"
-                    autoFocus
-                    onChange={(event) => setEditAreaValue(event.target.value)}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') commitWidthEdit(roomBox.id), commitAreaEdit(roomBox.id)
-                      if (event.key === 'Escape') setEditingId(null)
-                    }}
-                  />
-                </label>
-                <label className="room-card__dimension-label">
-                  Set width:
-                  <input
-                    type="number"
-                    className="room-card__dimension-input"
-                    value={editValue}
-                    step="0.01"
-                    min="0"
-                    onChange={(event) => setEditValue(event.target.value)}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                            commitWidthEdit(roomBox.id), commitAreaEdit(roomBox.id)
-                        }
-                      if (event.key === 'Escape') setEditingId(null)
-                    }}
-                  />
-                </label>
-                      </>
-                </div>
-              ) : (
-                <span className="room-card__area">
-                  {labelMode === 'area' ? formatArea(roomBox, scale) : formatDimensions(roomBox, scale)}
-                </span>
-              )}
-            </div>
+              <RoomLabel
+                key={`${roomBox.id}-label`}
+                id={roomBox.id}
+                roomName={roomBox.roomName}
+                x={renderRect.x}
+                y={renderRect.y}
+                width={renderRect.width}
+                height={renderRect.height}
+                color={roomBox.color}
+                isViolated={displayViolatedIds.has(roomBox.id)}
+                labelMode={labelMode}
+                scale={scale}
+                dimWidth={roomBox.width}
+                dimHeight={roomBox.height}
+                area={roomBox.area}
+                isEditing={isEditing}
+                editHeightValue={isEditing ? editHeightValue : undefined}
+                editValue={isEditing ? editValue : undefined}
+                onEditHeightChange={roomHandlers.editHeightChange}
+                onEditWidthChange={roomHandlers.editWidthChange}
+                onCommitEdit={roomHandlers.commitEdit}
+                onCancelEdit={roomHandlers.cancelEdit}
+              />
             )
           })}
         </div>

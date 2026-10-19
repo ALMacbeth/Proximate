@@ -2,6 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { forceSimulation, forceCollide } from 'd3-force'
 import { computeAffinities } from './autoArrangeAffinity.js'
 
+// The length-based constants below were tuned for rooms roughly
+// REFERENCE_ROOM_PX across. Room pixel sizes now follow true proportion
+// (see computeScale), so a file with a wide area spread can have rooms many
+// times that size — computeTuning scales every length-based constant by how
+// big the layout's typical room actually is, so behaviour stays the same at
+// any scale.
+const REFERENCE_ROOM_PX = 100
 const REPULSION_STRENGTH = 8000
 const MAX_REPULSION_PX = 40
 const CENTER_STRENGTH = 0.02
@@ -11,31 +18,51 @@ const COLLIDE_ITERATIONS = 3
 const ADJACENCY_CORRECTION_FACTOR = 0.3
 const AFFINITY_DISTANCE_CAP_PX = 400
 const AFFINITY_PULL_FACTOR = 0.02
-const REPEL_RANGE_PX = 400
-// Kept separate from AFFINITY_PULL_FACTOR (rather than sharing one constant)
-// so repel strength can be tuned on its own — attract and repel have
-// different-shaped formulas already (see makeForce's own comment), and
-// there's no reason a change to one should be forced to move the other.
+// Measured edge-to-edge (centre distance minus both radii), not
+// centre-to-centre, so the range still reaches the neighbours of a large room.
+const REPEL_RANGE_PX = 290
+// Kept separate from AFFINITY_PULL_FACTOR so repel strength can be tuned on
+// its own — attract and repel use different-shaped formulas (see makeForce).
 const REPEL_PULL_FACTOR = 0.03
+const START_JITTER_PX = 4
+const SETTLE_MAX_ITERATIONS = 200
+const SETTLE_EPSILON_PX = 0.1
+
+function computeTuning(boxes) {
+  const sizes = boxes
+    .map((box) => Math.sqrt(box.width * box.height))
+    .filter((size) => Number.isFinite(size) && size > 0)
+    .sort((a, b) => a - b)
+  const typicalSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] : REFERENCE_ROOM_PX
+  const k = typicalSize / REFERENCE_ROOM_PX
+  return {
+    k,
+    padding: SEPARATION_PADDING_PX * k,
+    // Force = S/d^2 with d and the resulting velocity both in length units,
+    // so strength scales with k^3 (k from S, and k^2 from the d^2 divisor).
+    repulsionStrength: REPULSION_STRENGTH * k ** 3,
+    maxRepulsion: MAX_REPULSION_PX * k,
+    affinityCap: AFFINITY_DISTANCE_CAP_PX * k,
+    repelRange: REPEL_RANGE_PX * k,
+    jitter: START_JITTER_PX * k,
+    settleEpsilon: SETTLE_EPSILON_PX * k,
+  }
+}
 
 // Rectangle-overlap separation, run as its own iterative position solver
 // rather than folded into the velocity-based forces below. Overlap is a
 // hard constraint (rooms must never overlap) rather than a soft preference,
 // so unlike repulsion/attraction it is NOT scaled by alpha — it always
 // resolves at full strength, even once the simulation has mostly cooled.
-// Each of the SEPARATION_ITERATIONS passes re-reads the positions the
-// previous pass in the same tick just corrected (Gauss-Seidel style), which
-// is what lets a correction on one side of a crowded room propagate through
-// and free it up within a single tick — a plain single pass leaves a room
-// boxed in on multiple sides receiving several opposing corrections that
-// largely cancel out, so it never actually escapes. This mirrors how
-// d3-force's own built-in forceCollide resolves circle overlap internally.
+// Each pass re-reads the positions the previous pass just corrected
+// (Gauss-Seidel style), which lets a correction on one side of a crowded
+// room propagate through and free it up within a single tick.
 //
 // Used two ways: as the live per-tick force for 'rectangle' collision mode,
-// and as a final cleanup pass before accept() commits, regardless of which
-// mode ran live — see the 'circle' mode note in start() for why that
-// cleanup matters.
-function resolveOverlaps(nodes) {
+// and as part of the settle pass before accept() commits, regardless of which
+// mode ran live. Returns the largest single push it applied.
+function resolveOverlaps(nodes, padding) {
+  let maxPush = 0
   for (let pass = 0; pass < SEPARATION_ITERATIONS; pass += 1) {
     for (let i = 0; i < nodes.length; i += 1) {
       const nodeA = nodes[i]
@@ -43,14 +70,14 @@ function resolveOverlaps(nodes) {
         const nodeB = nodes[j]
         const dx = nodeB.x - nodeA.x
         const dy = nodeB.y - nodeA.y
-        const overlapX = (nodeA.width + nodeB.width) / 2 + SEPARATION_PADDING_PX - Math.abs(dx)
-        const overlapY = (nodeA.height + nodeB.height) / 2 + SEPARATION_PADDING_PX - Math.abs(dy)
+        const overlapX = (nodeA.width + nodeB.width) / 2 + padding - Math.abs(dx)
+        const overlapY = (nodeA.height + nodeB.height) / 2 + padding - Math.abs(dy)
         if (overlapX <= 0 || overlapY <= 0) continue
 
         // A pinned node (the user is actively dragging it) never gets moved
-        // by the solver — its free partner absorbs the whole correction
-        // instead of just half. If both happen to be pinned, leave the
-        // overlap; that's the user's own placement, not ours to fight.
+        // by the solver — its free partner absorbs the whole correction. If
+        // both happen to be pinned, leave the overlap; that's the user's own
+        // placement, not ours to fight.
         const aFixed = nodeA.fx != null
         const bFixed = nodeB.fx != null
         if (aFixed && bFixed) continue
@@ -60,140 +87,117 @@ function resolveOverlaps(nodes) {
           const push = aFixed || bFixed ? overlapX : overlapX / 2
           if (!aFixed) nodeA.x -= sign * push
           if (!bFixed) nodeB.x += sign * push
+          maxPush = Math.max(maxPush, push)
         } else {
           const sign = dy >= 0 ? 1 : -1
           const push = aFixed || bFixed ? overlapY : overlapY / 2
           if (!aFixed) nodeA.y -= sign * push
           if (!bFixed) nodeB.y += sign * push
+          maxPush = Math.max(maxPush, push)
         }
       }
     }
   }
+  return maxPush
 }
 
-// How far a node's own footprint reaches from its center toward another
-// node, along the direction (ux, uy) between them — this is what lets
-// resolveAdjacency measure the actual visible GAP between two rooms
-// (edge-to-edge) instead of a raw center-to-center span that includes a
-// chunk of each room's own interior. Matches whichever shape is currently
-// driving the live collision: a circle's reach is just its radius in every
-// direction, but a rectangle's reach depends on the angle — the same
-// "distance from center to boundary along a ray" you'd compute for an
-// axis-aligned box (min of how far you can go before crossing the left/
-// right edge vs. the top/bottom edge).
-function computeReach(node, ux, uy, shape) {
+// The visible gap between two rooms' outlines for the current collision
+// shape. 'rectangle' is the true closest rectangle-to-rectangle gap — the
+// same metric computeConnections/rectDistance use for the violation display,
+// so what the physics satisfies is what the UI then reports. 'circle'
+// measures against the equal-area circles actually being rendered.
+function edgeGap(nodeA, nodeB, centerDistance, shape) {
   if (shape === 'rectangle') {
-    const halfWidth = node.width / 2
-    const halfHeight = node.height / 2
-    const tx = ux !== 0 ? halfWidth / Math.abs(ux) : Infinity
-    const ty = uy !== 0 ? halfHeight / Math.abs(uy) : Infinity
-    return Math.min(tx, ty)
+    const gapX = Math.max(0, Math.abs(nodeB.x - nodeA.x) - (nodeA.width + nodeB.width) / 2)
+    const gapY = Math.max(0, Math.abs(nodeB.y - nodeA.y) - (nodeA.height + nodeB.height) / 2)
+    return Math.hypot(gapX, gapY)
   }
-  return node.radius
+  return Math.max(0, centerDistance - nodeA.radius - nodeB.radius)
 }
 
 // adjacentRooms is keyed by room NAME, not id, so when several rooms share a
-// name (e.g. multiple "Incoming HV A" instances in a services layout) a rule
-// has to target exactly one of them, not all at once. Resolved fresh from
-// LIVE node positions on every call — not once at the start of the session
-// — because computeConnections (the drawn adjacency line, recomputed every
-// render from current positions) resolves "nearest" the same way. Freezing
-// this choice at session start let the two disagree as the physics moved
-// rooms around: the line would correctly follow whichever instance was NOW
-// closest, while a session-start snapshot kept pulling toward whichever one
-// USED to be closest — visibly, a room gets yanked toward one instance
-// while the line on screen points at a different one. Mirrors
-// computeConnections' own byName/nearest-by-distance logic exactly, just
-// operating on node positions (already centers) instead of room boxes.
-function resolveAdjacencyTargets(nodes) {
+// name a rule has to target exactly one of them. Which instance is nearest
+// changes as rooms move, so that choice is re-resolved from LIVE positions on
+// every call (see resolveAdjacencyTargets); this index holds only the static
+// part — which node declared which rule, and who the same-named candidates
+// are — so the per-tick work is just the distance comparison.
+function buildAdjacencyIndex(nodes) {
   const byName = new Map()
   nodes.forEach((node) => {
     if (!byName.has(node.roomName)) byName.set(node.roomName, [])
     byName.get(node.roomName).push(node)
   })
 
-  const byId = new Map(nodes.map((node) => [node.id, node]))
-  const pairs = new Map() // sorted "idA|idB" -> maxDistancePx
+  const rules = []
   nodes.forEach((node) => {
-    Object.entries(node.adjacentRoomsPx || {}).forEach(([name, maxDistancePx]) => {
-      const candidates = (byName.get(name) || []).filter((candidate) => candidate.id !== node.id)
-      if (candidates.length === 0) return
-      let nearest = candidates[0]
-      let nearestDistance = Math.hypot(nearest.x - node.x, nearest.y - node.y)
-      for (let i = 1; i < candidates.length; i += 1) {
-        const distance = Math.hypot(candidates[i].x - node.x, candidates[i].y - node.y)
-        if (distance < nearestDistance) {
-          nearest = candidates[i]
-          nearestDistance = distance
-        }
-      }
-      const key = [node.id, nearest.id].sort().join('|')
-      // Both rooms in a pair can each declare their own rule toward the
-      // other's name — keep the stricter (smaller) of the two.
-      const existing = pairs.get(key)
-      if (existing === undefined || maxDistancePx < existing) pairs.set(key, maxDistancePx)
+    Object.entries(node.adjacentRoomsPx).forEach(([name, maxDistancePx]) => {
+      const candidates = (byName.get(name) || []).filter((candidate) => candidate !== node)
+      if (candidates.length > 0) rules.push({ node, candidates, maxDistancePx })
     })
   })
+  return { rules, nodeCount: nodes.length }
+}
 
-  return [...pairs.entries()].map(([key, maxDistancePx]) => {
-    const [idA, idB] = key.split('|')
-    return { nodeA: byId.get(idA), nodeB: byId.get(idB), maxDistancePx }
+// Resolves "nearest same-named instance" from live node positions, mirroring
+// computeConnections' nearest-by-centre-distance logic so the physics always
+// pulls toward the same room the drawn line points at.
+function resolveAdjacencyTargets({ rules, nodeCount }) {
+  const pairs = new Map() // lo * nodeCount + hi -> { nodeA, nodeB, maxDistancePx }
+  rules.forEach(({ node, candidates, maxDistancePx }) => {
+    let nearest = candidates[0]
+    let nearestDistance = (nearest.x - node.x) ** 2 + (nearest.y - node.y) ** 2
+    for (let i = 1; i < candidates.length; i += 1) {
+      const distance = (candidates[i].x - node.x) ** 2 + (candidates[i].y - node.y) ** 2
+      if (distance < nearestDistance) {
+        nearest = candidates[i]
+        nearestDistance = distance
+      }
+    }
+    const nodeA = node.index < nearest.index ? node : nearest
+    const nodeB = nodeA === node ? nearest : node
+    const key = nodeA.index * nodeCount + nodeB.index
+    // Both rooms in a pair can each declare their own rule toward the
+    // other's name — keep the stricter (smaller) of the two.
+    const existing = pairs.get(key)
+    if (!existing) pairs.set(key, { nodeA, nodeB, maxDistancePx })
+    else if (maxDistancePx < existing.maxDistancePx) existing.maxDistancePx = maxDistancePx
   })
+  return pairs.values()
 }
 
 // The user's own explicit adjacency rules get a dedicated, unconditional
 // position solver — the same category of mechanism as resolveOverlaps —
-// rather than going through the soft, alpha-scaled velocity force below
-// that the inferred (color/keyword/fuzzy) tiers use. That distinction is
-// what makes this "hierarchical": a rule from the user's own data is a hard
-// constraint the layout should satisfy, not a soft aesthetic preference that
-// should fade as the simulation cools. Running it unconditionally, every
-// tick, is also what lets it actually win a contest against intervening
-// rooms' collision resistance — a velocity nudge that decays with alpha
-// never stood a chance against a collision solver that never decays.
+// rather than the soft, alpha-scaled velocity force the inferred
+// (color/keyword/fuzzy) tiers use: a rule from the user's own data is a hard
+// constraint, not an aesthetic preference that should fade as the simulation
+// cools.
 //
 // Deliberately closes only a FRACTION (ADJACENCY_CORRECTION_FACTOR) of the
-// excess distance per tick rather than the whole thing in one shot. A full,
-// instant correction can snap two rooms straight into an overlap whenever
-// the requested max distance is close to (or smaller than) what their own
-// footprints can physically achieve — resolveOverlaps then shoves them back
-// apart, the next tick's full correction snaps them right back together,
-// and the two solvers fight forever instead of settling ("too strong,
-// stuck overlapping"). A gradual pull still reliably closes the gap over a
-// handful of ticks (there are dozens per second) but gives resolveOverlaps,
-// which runs immediately after this in the same tick, a much smaller
-// correction to react to each time, so the pair settles smoothly at
-// whatever distance is actually achievable instead of oscillating.
-function resolveAdjacency(nodes, shape) {
-  resolveAdjacencyTargets(nodes).forEach(({ nodeA, nodeB, maxDistancePx }) => {
-    if (!nodeA || !nodeB) return
+// excess distance per call. A full, instant correction can snap two rooms
+// into an overlap whenever the requested distance is near what their
+// footprints can physically achieve, after which resolveOverlaps shoves them
+// apart and the two solvers fight forever. A gradual pull leaves
+// resolveOverlaps a small correction to react to, so the pair settles at
+// whatever distance is actually achievable. Returns the largest move applied.
+function resolveAdjacency(index, shape, tuning) {
+  let maxMove = 0
+  for (const { nodeA, nodeB, maxDistancePx } of resolveAdjacencyTargets(index)) {
     const dx = nodeB.x - nodeA.x
     const dy = nodeB.y - nodeA.y
     const centerDistance = Math.hypot(dx, dy) || 1
     const ux = dx / centerDistance
     const uy = dy / centerDistance
 
-    // maxDistancePx is a clearance-gap ceiling — the same edge-to-edge
-    // metric computeConnections/rectDistance use elsewhere in the app for
-    // adjacency-violation display — not a center-to-center span, so each
-    // room's own reach has to come out of the raw distance first. Without
-    // this, "distance" silently meant a point somewhere inside each room
-    // rather than its visible edge, which is most obvious in circle mode
-    // where the room's actual boundary is right there on screen.
-    const reachA = computeReach(nodeA, ux, uy, shape)
-    const reachB = computeReach(nodeB, ux, uy, shape)
-    const edgeDistance = Math.max(0, centerDistance - reachA - reachB)
-
-    // The floor is just the padding gap now — reach is already subtracted
-    // above, so there's no need to also account for each room's footprint
-    // here the way the old center-to-center version did.
-    const target = Math.max(maxDistancePx, SEPARATION_PADDING_PX)
-    const excess = edgeDistance - target
-    if (excess <= 0) return
+    // maxDistancePx is a clearance gap, not a centre-to-centre span. The
+    // floor is the separation padding, which is the closest the overlap
+    // solver will ever allow two rooms to sit.
+    const target = Math.max(maxDistancePx, tuning.padding)
+    const excess = edgeGap(nodeA, nodeB, centerDistance, shape) - target
+    if (excess <= 0) continue
 
     const aFixed = nodeA.fx != null
     const bFixed = nodeB.fx != null
-    if (aFixed && bFixed) return
+    if (aFixed && bFixed) continue
 
     const step = excess * ADJACENCY_CORRECTION_FACTOR
     const pull = aFixed || bFixed ? step : step / 2
@@ -205,24 +209,45 @@ function resolveAdjacency(nodes, shape) {
       nodeB.x -= ux * pull
       nodeB.y -= uy * pull
     }
-  })
+    maxMove = Math.max(maxMove, pull)
+  }
+  return maxMove
+}
+
+// Runs adjacency and overlap solving against the rooms' REAL rectangles
+// until neither moves anything meaningful, so what gets committed matches
+// what the normal (non-preview) view will measure — regardless of whether the
+// live session used circles, which can interpenetrate as rectangles and meet
+// adjacency limits by a different metric. Overlap runs last in each round, so
+// even if an adjacency rule can't be met (blocked by neighbours) the result
+// is never left overlapping. Capped so an unsatisfiable rule can't spin.
+//
+// A rule that can't be met keeps pulling and being pushed back, so the loop
+// above can run to its cap with a few overlaps still unresolved. The final
+// overlap-only pass has no adjacency fighting it, so it always finishes the
+// job — committed layouts never overlap.
+function settleLayout(nodes, index, tuning) {
+  for (let i = 0; i < SETTLE_MAX_ITERATIONS; i += 1) {
+    const adjacencyMove = resolveAdjacency(index, 'rectangle', tuning)
+    const overlapMove = resolveOverlaps(nodes, tuning.padding)
+    if (Math.max(adjacencyMove, overlapMove) < tuning.settleEpsilon) break
+  }
+  for (let i = 0; i < SETTLE_MAX_ITERATIONS; i += 1) {
+    if (resolveOverlaps(nodes, tuning.padding) < tuning.settleEpsilon) break
+  }
 }
 
 // Registers whichever collision strategy is current under a shared force
 // name ('separation'), so calling this again on an already-running
 // simulation replaces the previous one — that's what lets setCollisionShape
-// hot-swap the live mode instead of only taking effect on the next start().
-// Neither strategy scales with alpha (see resolveOverlaps' own comment for
-// why). A circle's footprint is smaller than its room's actual rectangle
-// along the diagonals (an equal-area circle is narrower than a square at
-// the corners), so two rooms can end up with non-overlapping circles but
-// still-overlapping rectangles mid-session — harmless while the layout is
-// visibly still settling, but accept() always runs one final resolveOverlaps
-// pass regardless of mode so the committed result is never wrong, even
-// after a 'circle' session.
-function applyCollisionForce(simulation, nodes, shape) {
+// hot-swap the live mode. Neither strategy scales with alpha. A circle's
+// footprint differs from its room's rectangle, so rooms can interpenetrate as
+// rectangles mid-session in circle mode; settleLayout resolves that at accept.
+function applyCollisionForce(simulation, nodes, shape, tuning) {
   if (shape === 'rectangle') {
-    simulation.force('separation', () => resolveOverlaps(nodes))
+    simulation.force('separation', () => {
+      resolveOverlaps(nodes, tuning.padding)
+    })
   } else {
     simulation.force(
       'separation',
@@ -234,25 +259,21 @@ function applyCollisionForce(simulation, nodes, shape) {
 // Velocity-based force covering the soft layout preferences: generic
 // pairwise repulsion (so rooms spread out instead of collapsing to a point)
 // and the INFERRED affinity tiers (color/keyword/fuzzy) from
-// autoArrangeAffinity.js — soft nudges that are fine to fade as alpha
-// decays. The user's own adjacentRooms rule never appears in `affinities`
-// at all (autoArrangeAffinity.js no longer resolves it); it's a hard
-// constraint, handled entirely by resolveAdjacency's unconditional position
-// solver above instead, not this soft velocity path.
+// autoArrangeAffinity.js. The user's own adjacentRooms rule never appears in
+// `affinities`; it's a hard constraint handled by resolveAdjacency.
 //
-// The keyword tier can now carry a NEGATIVE strength (a "repel" edge from
-// TERM_RELATIONS in autoArrangeAffinity.js, e.g. wc-away-from-kitchen) —
-// every other tier is attract-only. Attract and repel deliberately use
-// opposite distance shapes, not just a sign flip on the same formula:
-// attract is a spring that pulls harder the FURTHER apart the pair is
-// (capped, so it keeps tugging distant rooms closer), while repel is a
-// short-range push that's strongest when the pair is already CLOSE and
-// fades to nothing past REPEL_RANGE_PX (the same shape the generic
-// repulsion above uses). Reusing the attract formula for a repel edge would
-// do the opposite of what "keep these apart" needs — the push would
-// weaken exactly when the pair is closest and most in need of separating.
-function makeForce(nodes, affinities, centroid) {
+// The keyword tier can carry a NEGATIVE strength (a "repel" edge from
+// TERM_RELATIONS). Attract and repel deliberately use opposite distance
+// shapes: attract is a spring that pulls harder the FURTHER apart the pair is
+// (capped), while repel is a short-range push that's strongest when the pair
+// is CLOSE and fades to nothing past the repel range.
+function makeForce(nodes, affinities, centroid, tuning) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
+  const pairs = affinities.flatMap(({ aId, bId, strength }) => {
+    const nodeA = byId.get(aId)
+    const nodeB = byId.get(bId)
+    return nodeA && nodeB ? [{ nodeA, nodeB, strength }] : []
+  })
 
   return (alpha) => {
     for (let i = 0; i < nodes.length; i += 1) {
@@ -261,11 +282,11 @@ function makeForce(nodes, affinities, centroid) {
         const nodeB = nodes[j]
         const dx = nodeB.x - nodeA.x
         const dy = nodeB.y - nodeA.y
-        const distance = Math.hypot(dx, dy) || 1
+        const distance = Math.sqrt(dx * dx + dy * dy) || 1
         const ux = dx / distance
         const uy = dy / distance
 
-        const repulse = Math.min(REPULSION_STRENGTH / (distance * distance), MAX_REPULSION_PX) * alpha
+        const repulse = Math.min(tuning.repulsionStrength / (distance * distance), tuning.maxRepulsion) * alpha
         nodeA.vx -= ux * repulse
         nodeA.vy -= uy * repulse
         nodeB.vx += ux * repulse
@@ -273,19 +294,17 @@ function makeForce(nodes, affinities, centroid) {
       }
     }
 
-    affinities.forEach(({ aId, bId, strength }) => {
-      const nodeA = byId.get(aId)
-      const nodeB = byId.get(bId)
-      if (!nodeA || !nodeB) return
+    pairs.forEach(({ nodeA, nodeB, strength }) => {
       const dx = nodeB.x - nodeA.x
       const dy = nodeB.y - nodeA.y
-      const distance = Math.hypot(dx, dy) || 1
+      const distance = Math.sqrt(dx * dx + dy * dy) || 1
 
       let pull
       if (strength >= 0) {
-        pull = strength * alpha * Math.min(distance, AFFINITY_DISTANCE_CAP_PX) * AFFINITY_PULL_FACTOR
+        pull = strength * alpha * Math.min(distance, tuning.affinityCap) * AFFINITY_PULL_FACTOR
       } else {
-        const closeness = Math.max(0, REPEL_RANGE_PX - distance)
+        const gap = Math.max(0, distance - nodeA.radius - nodeB.radius)
+        const closeness = Math.max(0, tuning.repelRange - gap)
         if (closeness === 0) return
         pull = strength * alpha * closeness * REPEL_PULL_FACTOR
       }
@@ -313,27 +332,27 @@ function makeForce(nodes, affinities, centroid) {
 // accept() commits the final positions into the real roomBoxes state as one
 // history entry, cancel() just discards the preview — roomBoxes is never
 // touched until accept() commits it, so the shared undo stack only ever
-// sees this as a single gesture, the same as any other discrete action in
-// the app (see useUndoHistory.js).
+// sees this as a single gesture (see useUndoHistory.js).
 export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }) {
   const [isArranging, setIsArranging] = useState(false)
   const [previewBoxes, setPreviewBoxes] = useState([])
   // 'circle' lets rooms slide past each other while settling — circle-circle
-  // separation pushes along the full center-to-center line in any direction,
+  // separation pushes along the full centre-to-centre line in any direction,
   // where rectangle separation only ever pushes along X or Y, which tends to
-  // lock rooms into place rather than letting them route around each other.
-  // 'rectangle' collides against the room's real footprint the whole time
-  // instead, which is tighter but less free-flowing. Switchable live via
-  // setCollisionShape below, which hot-swaps the running simulation's force.
+  // lock rooms into place. 'rectangle' collides against the room's real
+  // footprint the whole time, which is tighter but less free-flowing.
+  // Switchable live via setCollisionShape below.
   const [collisionShape, setCollisionShapeState] = useState('circle')
-  // resolveAdjacency's force closure (registered once in start()) and
-  // accept()'s cleanup loop both need whichever shape is CURRENT, including
-  // after a live setCollisionShape hot-swap — a ref avoids re-registering
-  // that force on every mode change just to keep its closure fresh.
+  // The adjacency force closure (registered once in start()) needs whichever
+  // shape is CURRENT, including after a live hot-swap — a ref avoids
+  // re-registering that force on every mode change.
   const collisionShapeRef = useRef(collisionShape)
   collisionShapeRef.current = collisionShape
   const simulationRef = useRef(null)
   const nodesRef = useRef([])
+  const nodeMapRef = useRef(new Map())
+  const adjacencyIndexRef = useRef(null)
+  const tuningRef = useRef(null)
   const roomBoxesRef = useRef(roomBoxes)
   roomBoxesRef.current = roomBoxes
   // Which node a pointer is actively dragging, if any — see dragPreview's
@@ -341,9 +360,10 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
   const draggingIdRef = useRef(null)
 
   const readPreview = useCallback(() => {
+    const nodeMap = nodeMapRef.current
     setPreviewBoxes(
       roomBoxesRef.current.map((box) => {
-        const node = nodesRef.current.find((n) => n.id === box.id)
+        const node = nodeMap.get(box.id)
         if (!node) return box
         return { ...box, x: node.x - node.width / 2, y: node.y - node.height / 2, radius: node.radius }
       }),
@@ -354,6 +374,9 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
     simulationRef.current?.stop()
     simulationRef.current = null
     nodesRef.current = []
+    nodeMapRef.current = new Map()
+    adjacencyIndexRef.current = null
+    tuningRef.current = null
     draggingIdRef.current = null
     setIsArranging(false)
     setPreviewBoxes([])
@@ -364,7 +387,9 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
   const start = useCallback(() => {
     const boxes = roomBoxesRef.current
     if (boxes.length === 0) return
+    simulationRef.current?.stop()
 
+    const tuning = computeTuning(boxes)
     const centroid = {
       x: boxes.reduce((sum, box) => sum + box.x + box.width / 2, 0) / boxes.length,
       y: boxes.reduce((sum, box) => sum + box.y + box.height / 2, 0) / boxes.length,
@@ -375,11 +400,11 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
     // equal-area circle for the room's real (target-area-derived) footprint
     // — box.area is already in the same px² space box.width/height live in.
     // `roomName`/`adjacentRoomsPx` (metres converted to px once, here) ride
-    // along on each node so resolveAdjacencyTargets can re-resolve "nearest
-    // same-named instance" from live positions every tick — see its own
-    // comment for why that has to be dynamic rather than a one-time lookup.
-    const nodes = boxes.map((box) => ({
+    // along on each node so adjacency can re-resolve "nearest same-named
+    // instance" from live positions every tick.
+    const nodes = boxes.map((box, index) => ({
       id: box.id,
+      index,
       roomName: box.roomName,
       adjacentRoomsPx: Object.fromEntries(
         Object.entries(box.adjacentRooms || {})
@@ -389,29 +414,33 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
       width: box.width,
       height: box.height,
       radius: Math.sqrt(box.area / Math.PI),
-      x: box.x + box.width / 2 + (Math.random() - 0.5) * 4,
-      y: box.y + box.height / 2 + (Math.random() - 0.5) * 4,
+      x: box.x + box.width / 2 + (Math.random() - 0.5) * tuning.jitter,
+      y: box.y + box.height / 2 + (Math.random() - 0.5) * tuning.jitter,
       vx: 0,
       vy: 0,
     }))
     nodesRef.current = nodes
+    nodeMapRef.current = new Map(nodes.map((node) => [node.id, node]))
+    tuningRef.current = tuning
+    const adjacencyIndex = buildAdjacencyIndex(nodes)
+    adjacencyIndexRef.current = adjacencyIndex
 
     const affinities = computeAffinities(boxes)
     const simulation = forceSimulation(nodes)
-      .force('layout', makeForce(nodes, affinities, centroid))
+      .force('layout', makeForce(nodes, affinities, centroid, tuning))
       // Registered between the soft layout force and collision, so each
       // tick's order is: soft nudges → adjacency pulls violating pairs
-      // together (possibly creating fresh overlaps in doing so) → collision
-      // immediately resolves whatever overlaps exist now. That ordering is
-      // what makes adjacency actually able to "push through" a crowded
-      // cluster: collision always gets the last word on overlap-freedom, but
-      // adjacency gets to force the crowding that makes room in the first
-      // place, every single tick, not just when alpha happens to be high.
-      .force('adjacency', () => resolveAdjacency(nodes, collisionShapeRef.current))
+      // together (possibly creating fresh overlaps) → collision immediately
+      // resolves whatever overlaps exist now. That ordering is what lets
+      // adjacency push through a crowded cluster while collision always gets
+      // the last word on overlap-freedom.
+      .force('adjacency', () => {
+        resolveAdjacency(adjacencyIndex, collisionShapeRef.current, tuning)
+      })
       .alphaDecay(0.02)
       .on('tick', readPreview)
 
-    applyCollisionForce(simulation, nodes, collisionShape)
+    applyCollisionForce(simulation, nodes, collisionShape, tuning)
 
     simulationRef.current = simulation
     setIsArranging(true)
@@ -420,15 +449,14 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
 
   // Wraps the raw setState so switching mode mid-session actually takes
   // effect immediately — d3-force forces can be reassigned on a running
-  // simulation via simulation.force(name, ...), so this just re-registers
-  // 'separation' under the new strategy and gives it a small alpha bump to
-  // make sure it visibly does something rather than sitting idle if the
-  // simulation had already mostly cooled down.
+  // simulation, so this just re-registers 'separation' under the new
+  // strategy and gives it a small alpha bump so it visibly does something
+  // even if the simulation had mostly cooled down.
   const setCollisionShape = useCallback((shape) => {
     setCollisionShapeState(shape)
     const simulation = simulationRef.current
     if (!simulation) return
-    applyCollisionForce(simulation, nodesRef.current, shape)
+    applyCollisionForce(simulation, nodesRef.current, shape, tuningRef.current)
     simulation.alpha(Math.max(simulation.alpha(), 0.4)).restart()
   }, [])
 
@@ -441,11 +469,9 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
     const centerY = nodes.reduce((sum, node) => sum + node.y, 0) / nodes.length
     // Sized from the rooms' own total footprint, not a fixed constant and
     // not the current bounding box — a flat offset relative to wherever
-    // nodes had already settled barely moves a large layout, and the same
-    // unchanged forces just pull everything back into roughly the same
-    // arrangement. Total area scales with room count/size regardless of how
-    // tightly the current arrangement happens to have converged, so the
-    // scatter stays meaningful even after a fully-settled session.
+    // nodes had already settled barely moves a large layout. Total area
+    // scales with room count/size regardless of how tightly the current
+    // arrangement has converged.
     const totalArea = nodes.reduce((sum, node) => sum + node.width * node.height, 0)
     const spreadRadius = Math.sqrt(totalArea) * 1.5
 
@@ -461,7 +487,7 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
   }, [])
 
   const pinNode = useCallback((id, x, y) => {
-    const node = nodesRef.current.find((n) => n.id === id)
+    const node = nodeMapRef.current.get(id)
     if (!node) return
     draggingIdRef.current = id
     node.fx = x
@@ -473,11 +499,9 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
     // Each room's onPointerMove fires on ordinary hover, same as any DOM
     // pointermove listener — it needs no prior pointerdown and no button
     // held. Without this guard, dragPreview would pin whatever room the
-    // cursor happened to be passing over, not just the one actually being
-    // dragged (mirrors the dragState.current guard useRoomDrag.js uses for
-    // exactly the same reason).
+    // cursor happened to be passing over, not just the one being dragged.
     if (draggingIdRef.current !== id) return
-    const node = nodesRef.current.find((n) => n.id === id)
+    const node = nodeMapRef.current.get(id)
     if (!node) return
     node.fx = x
     node.fy = y
@@ -485,7 +509,7 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
 
   const releaseNode = useCallback((id) => {
     if (draggingIdRef.current === id) draggingIdRef.current = null
-    const node = nodesRef.current.find((n) => n.id === id)
+    const node = nodeMapRef.current.get(id)
     if (node) {
       node.fx = null
       node.fy = null
@@ -497,22 +521,12 @@ export function useAutoArrange({ roomBoxes, setRoomBoxes, scale, recordHistory }
 
   const accept = useCallback(() => {
     if (!isArranging) return
-    // resolveAdjacency is deliberately gradual now (see its own comment), so
-    // one call barely nudges anything — run it interleaved with overlap
-    // cleanup a few times, the same order every live tick already used, to
-    // let it actually converge before committing rather than just taking
-    // whatever the last live tick happened to land on. Also guarantees a
-    // non-overlapping rectangle result even after a 'circle' session, where
-    // two rooms' circles can settle non-overlapping while their actual
-    // rectangles still clip along a diagonal (see start()).
-    for (let i = 0; i < 20; i += 1) {
-      resolveAdjacency(nodesRef.current, collisionShapeRef.current)
-      resolveOverlaps(nodesRef.current)
-    }
+    settleLayout(nodesRef.current, adjacencyIndexRef.current, tuningRef.current)
     recordHistory()
+    const nodeMap = nodeMapRef.current
     setRoomBoxes(
       roomBoxesRef.current.map((box) => {
-        const node = nodesRef.current.find((n) => n.id === box.id)
+        const node = nodeMap.get(box.id)
         if (!node) return box
         return { ...box, x: node.x - node.width / 2, y: node.y - node.height / 2 }
       }),

@@ -25,6 +25,19 @@ export function computeScale(rooms) {
   return MIN_SIZE / Math.sqrt(minArea)
 }
 
+// computeScale sizes every room in true proportion, so a file whose largest
+// room is thousands of times bigger than its smallest produces a very large
+// canvas — almost always a unit or typo error in one row. Returns the
+// offending extremes when the spread exceeds `maxRatio`, otherwise null.
+export function describeAreaSpread(rooms, maxRatio) {
+  const valid = rooms.filter((room) => Number.isFinite(room.targetArea) && room.targetArea > 0)
+  if (valid.length < 2) return null
+  const smallest = valid.reduce((min, room) => (room.targetArea < min.targetArea ? room : min))
+  const largest = valid.reduce((max, room) => (room.targetArea > max.targetArea ? room : max))
+  const ratio = largest.targetArea / smallest.targetArea
+  return ratio > maxRatio ? { ratio, smallest, largest } : null
+}
+
 // A saved layout stores pixel sizes at whatever scale was in effect when it
 // was saved, and every room records area = targetArea * scale^2, so that
 // scale can be read back exactly. Recomputing it from targetArea instead
@@ -180,9 +193,15 @@ export function computeConnections(roomBoxes, scale) {
       const candidates = (byName.get(name) || []).filter((candidate) => candidate.id !== roomBox.id)
       if (candidates.length === 0) return
 
-      const nearest = candidates.reduce((closest, candidate) =>
-        centerDistance(roomBox, candidate) < centerDistance(roomBox, closest) ? candidate : closest,
-      )
+      let nearest = candidates[0]
+      let nearestDistance = centerDistance(roomBox, nearest)
+      for (let i = 1; i < candidates.length; i += 1) {
+        const distance = centerDistance(roomBox, candidates[i])
+        if (distance < nearestDistance) {
+          nearest = candidates[i]
+          nearestDistance = distance
+        }
+      }
 
       const { from: fromPoint, to: toPoint } = nearestSidePoints(roomBox, nearest)
 

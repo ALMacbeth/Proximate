@@ -360,19 +360,6 @@
   cursor: text;
 }
 
-.room-card__area-input {
-    width: 4.5em;
-    font: inherit;
-    font-size: 0.85em;
-    text-align: center;
-    color: var(--text-h);
-    background: var(--bg);
-    border: 1px solid var(--accent-border);
-    border-radius: 4px;
-    padding: 0.1em 0.3em;
-    cursor: text;
-}
-
 .room-card__resize-handle {
     position: absolute;
     right: 2px;
@@ -600,6 +587,95 @@
     color: #e5484d;
     font-size: 13px;
     box-shadow: var(--shadow);
+}
+
+.room_properties_menu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 230px;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+    box-shadow: var(--shadow);
+
+    & label {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    & input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        color: var(--text-h);
+        background: var(--bg);
+        border: 1px solid var(--accent-border);
+        border-radius: 4px;
+        padding: 4px 6px;
+    }
+
+    & input[aria-invalid='true'] {
+        border-color: #e5484d;
+    }
+}
+
+.room_properties_menu__title {
+    color: var(--text-h);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.room_properties_menu__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+
+    & button {
+        height: 28px;
+        padding: 0 10px;
+        font-size: 12px;
+        background: var(--accent-bg);
+        color: var(--text);
+    }
+
+    & button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.scale_warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: min(520px, 60%);
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid #d9a441;
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text-h);
+    font-size: 12px;
+    text-align: left;
+    box-shadow: var(--shadow);
+
+    & button {
+        flex: none;
+        padding: 0 6px;
+        background: var(--accent-bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.4;
+    }
 }
 
 .wall_thickness_control {

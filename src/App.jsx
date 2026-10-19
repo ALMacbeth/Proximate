@@ -1,6 +1,13 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import RoomCanvas from './RoomCanvas.jsx'
+import {
+    MAX_COUNT_PER_ROW,
+    MAX_ROOMS,
+    normalizeCorridors,
+    normalizeRoomsArray,
+    sanitizeColor,
+} from './importData.js'
 import './App.css'
 
 const ROOM_NAME_HEADER = 'Room Name'
@@ -17,9 +24,14 @@ function parseAdjacentRooms(value) {
     return text.split(',').reduce((adjacentRooms, pair) => {
         const [name, distance] = pair.split(':')
         const trimmedName = name?.trim()
-        if (!trimmedName || distance === undefined) return {}
+        // A malformed pair is skipped on its own — it must not discard the
+        // valid rules already parsed from the same cell.
+        if (!trimmedName || distance === undefined) return adjacentRooms
 
-        adjacentRooms[trimmedName] = parseFloat(distance.trim())
+        const maxDistance = parseFloat(distance.trim())
+        if (!Number.isFinite(maxDistance) || maxDistance < 0) return adjacentRooms
+
+        adjacentRooms[trimmedName] = maxDistance
         return adjacentRooms
     }, {})
 }
@@ -32,19 +44,6 @@ function extractFillColor(cell) {
 
 
 
-function roomsArrayToMap(roomsArray) {
-    const rooms = {}
-    roomsArray.forEach((room, index) => {
-        if (typeof room?.roomName !== 'string') {
-            throw new Error('The layout file does not look like an exported room layout.')
-        }
-        const id = typeof room.id === 'string' && room.id ? room.id : `room-${index}`
-        const { id: _unused, ...rest } = room
-        rooms[id] = rest
-    })
-    return rooms
-}
-
 function parseLayoutJson(text) {
     let data
     try {
@@ -56,7 +55,7 @@ function parseLayoutJson(text) {
 
     if (Array.isArray(data)) {
         if (data.length === 0) throw new Error('The layout file is empty or invalid.')
-        return { rooms: roomsArrayToMap(data), corridorNodes: [], corridorEdges: [], wallThicknessMm: undefined }
+        return { rooms: normalizeRoomsArray(data), corridorNodes: [], corridorEdges: [], wallThicknessMm: undefined }
     }
 
     if (!Array.isArray(data?.rooms) || data.rooms.length === 0) {
@@ -64,9 +63,8 @@ function parseLayoutJson(text) {
     }
 
     return {
-        rooms: roomsArrayToMap(data.rooms),
-        corridorNodes: Array.isArray(data.corridorNodes) ? data.corridorNodes : [],
-        corridorEdges: Array.isArray(data.corridorEdges) ? data.corridorEdges : [],
+        rooms: normalizeRoomsArray(data.rooms),
+        ...normalizeCorridors(data.corridorNodes, data.corridorEdges),
         wallThicknessMm: Number.isFinite(data.wallThicknessMm) ? data.wallThicknessMm : undefined,
     }
 }
@@ -119,7 +117,14 @@ function parseWorkbook(arrayBuffer) {
             const minWidth = minWidthValue === '' || minWidthValue === undefined ? undefined : parseFloat(minWidthValue)
             const roomNameCell = sheet[`${roomNameColumn}${excelRowNumber}`]
             const adjacentRooms = parseAdjacentRooms(row[adjacentRoomsIndex])
-            const color = extractFillColor(roomNameCell)
+            const color = sanitizeColor(extractFillColor(roomNameCell))
+
+            if (count > MAX_COUNT_PER_ROW) {
+                throw new Error(`Row ${excelRowNumber} has a Count of ${count} — the maximum per row is ${MAX_COUNT_PER_ROW}.`)
+            }
+            if (nextId + count > MAX_ROOMS) {
+                throw new Error(`That spreadsheet would create more than ${MAX_ROOMS} rooms, which is the maximum supported.`)
+            }
 
             // Each instance is its own independent room sharing the same
             // name/area/adjacency/color — the app already treats repeated
@@ -132,7 +137,7 @@ function parseWorkbook(arrayBuffer) {
                     roomName: String(row[roomNameIndex]),
                     targetArea,
                     adjacentRooms,
-                    minWidth: Number.isFinite(minWidth) ? minWidth : undefined,
+                    minWidth: Number.isFinite(minWidth) && minWidth > 0 ? minWidth : undefined,
                     color,
                 }
             }
@@ -241,7 +246,9 @@ function App() {
     }
 
     const roomIds = Object.keys(rooms)
-    const roomList = roomIds.map((id) => ({ id, ...rooms[id] }))
+    // Memoised: RoomCanvas resets its whole layout (and undo history) whenever
+    // this array's identity changes, so it must only change with `rooms`.
+    const roomList = useMemo(() => Object.keys(rooms).map((id) => ({ id, ...rooms[id] })), [rooms])
 
     return (
         <section id="center">
