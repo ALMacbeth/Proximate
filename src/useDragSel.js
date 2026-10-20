@@ -11,7 +11,7 @@ function pointInRect(point, rect) {
 }
 
 // An edge has no single box of its own, so its two endpoints' bounding box
-// stands in for it — the same coarse "does the box overlap" test rooms
+// stands in for it - the same coarse "does the box overlap" test rooms
 // already use, not an exact line-segment intersection.
 function edgeBoundingBox(nodeA, nodeB) {
   const x = Math.min(nodeA.x, nodeB.x)
@@ -43,7 +43,7 @@ export function useDragSelect({
 
   const handlePointerDown = (event) => {
     // Without this, the browser can start its own native drag/text-selection
-    // gesture on mousedown+move — showing a "no-drop" cursor and suppressing
+    // gesture on mousedown+move - showing a "no-drop" cursor and suppressing
     // our pointermove events until release, which is why the selection box
     // would only appear to "catch up" on pointerup instead of live-updating.
     event.preventDefault()
@@ -87,7 +87,7 @@ export function useDragSelect({
     // coarse (it's the box spanning both endpoints, not the edge's actual
     // shape), so a marquee that merely touches a node reliably also
     // "touches" every edge attached to it. Once that node is captured,
-    // skip its edges rather than select both — a marquee meant to grab one
+    // skip its edges rather than select both - a marquee meant to grab one
     // node shouldn't also sweep in its whole surrounding network.
     const nextEdges = new Set(drag.baseEdgeSelection)
     corridorEdges.forEach((edge) => {

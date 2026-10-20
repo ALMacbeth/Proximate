@@ -6,7 +6,7 @@ const MAX_HISTORY = 50
 // undo, e.g. useUndoHistory({ roomBoxes: [roomBoxes, setRoomBoxes],
 // corridorNodes: [corridorNodes, setCorridorNodes] }). Callers record a
 // snapshot themselves right before a discrete action (drag, resize, width
-// edit) starts changing state — not on every intermediate update — so one
+// edit) starts changing state - not on every intermediate update - so one
 // undo step reverts one whole gesture (across every slice at once, not
 // per-slice) rather than one per pointermove frame.
 export function useUndoHistory(slices) {

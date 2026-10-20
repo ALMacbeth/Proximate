@@ -1,7 +1,7 @@
 const MIN_SIZE = 48
 // Kept small: zoom lets the user compensate for a visually tiny room, so this
 // only needs to guard against clampWidthToArea's area/width blowing up near
-// zero — not guarantee comfortable clicking at the default zoom level. A
+// zero - not guarantee comfortable clicking at the default zoom level. A
 // smaller floor also shrinks MIN_DIMENSION^2, making it far less likely a
 // small room's true area falls below it when sharing a file with a much
 // larger room (which would otherwise freeze its resize range at one point).
@@ -11,7 +11,7 @@ const GAP = 12
 // Anchored to the SMALLEST room, not the largest: sizing off the largest
 // room (so it fits a fixed max px size) forces scale down when a file has a
 // huge area range, which then pushes small rooms below MIN_SIZE and clamps
-// them all up to the same floor — visually different-sized rooms rendering
+// them all up to the same floor - visually different-sized rooms rendering
 // identically. Anchoring to the smallest room instead means every room's
 // pixel size stays truly proportional to its area and MIN_SIZE never needs
 // to override it; the tradeoff is a very large room can get large in pixels
@@ -27,7 +27,7 @@ export function computeScale(rooms) {
 
 // computeScale sizes every room in true proportion, so a file whose largest
 // room is thousands of times bigger than its smallest produces a very large
-// canvas — almost always a unit or typo error in one row. Returns the
+// canvas - almost always a unit or typo error in one row. Returns the
 // offending extremes when the spread exceeds `maxRatio`, otherwise null.
 export function describeAreaSpread(rooms, maxRatio) {
   const valid = rooms.filter((room) => Number.isFinite(room.targetArea) && room.targetArea > 0)
@@ -56,7 +56,7 @@ export function recoverScaleFromRooms(rooms) {
 // Builds the on-canvas box for each room: initial width/height are equal
 // (a square) sized so area on screen is proportional to targetArea. `area`
 // is recorded as the room's true physical area (targetArea * scale^2), not
-// size^2 — size can be inflated above that by MIN_SIZE/MIN_DIMENSION/minWidth
+// size^2 - size can be inflated above that by MIN_SIZE/MIN_DIMENSION/minWidth
 // floors, and preserving THAT inflated value through resize (instead of the
 // real target area) previously caused resize bounds to collapse to a single,
 // frozen point for small rooms sharing a file with a much larger one.
@@ -68,7 +68,7 @@ export function computeRoomBoxes(rooms, scale) {
 
     // MIN_SIZE is a purely cosmetic pixel floor for rooms with no explicit
     // minWidth, so tiny/unconstrained rooms stay clickable regardless of
-    // scale. It must NOT apply once a real minWidth is set — otherwise, in a
+    // scale. It must NOT apply once a real minWidth is set - otherwise, in a
     // file mixing a very large room (which shrinks `scale`) with a small
     // one, MIN_SIZE can silently outrank the user's actual minWidth in the
     // Math.max below, rendering (and displaying) a value that has nothing
@@ -100,7 +100,7 @@ export function clampWidthToArea(desiredWidth, area, minWidthPx) {
   const upperBound = Math.max(lowerBound, Math.min(area / MIN_DIMENSION, minWidthPx > 0 ? area / minWidthPx : Infinity))
 
   // Note: for a room whose true area is smaller than lowerBound^2, this
-  // collapses upperBound to lowerBound — the room can't be resized at all
+  // collapses upperBound to lowerBound - the room can't be resized at all
   // without exceeding its target area, so it stays fixed at its minimum
   // size rather than growing past it.
   const width = Math.min(upperBound, Math.max(lowerBound, desiredWidth))
@@ -163,7 +163,7 @@ export function nearestSidePoints(a, b) {
   return { distance, from, to }
 }
 
-// True minimum distance between two axis-aligned rectangles' boundaries —
+// True minimum distance between two axis-aligned rectangles' boundaries -
 // correctly finds e.g. a corner-to-corner gap for diagonally-offset rooms,
 // which comparing only side midpoints (nearestSidePoints, used for the
 // visual connection line) can't. dx/dy are 0 when the rectangles overlap on
@@ -226,14 +226,14 @@ function edgePoints(min, size) {
 }
 
 // Shared snap search along one axis. `others` is an array of
-// { min, size, crossMin, crossSize } — position/size on the snap axis, plus
+// { min, size, crossMin, crossSize } - position/size on the snap axis, plus
 // position/size on the perpendicular axis (needed to draw a guide line that
 // spans both the moving and matched boxes). `anchorOnly` restricts the
 // moving box to only its far edge as a snap candidate (resizing, where the
 // near edge is fixed); otherwise start/center/end are all candidates
 // (dragging, where the whole box moves). Returns the delta to apply plus a
-// `guide` — the matched coordinate and the perpendicular span to draw a line
-// across — or `guide: null` if nothing was within `threshold`.
+// `guide` - the matched coordinate and the perpendicular span to draw a line
+// across - or `guide: null` if nothing was within `threshold`.
 function findAxisSnap(min, size, crossMin, crossSize, others, threshold, anchorOnly) {
   const moving = edgePoints(min, size)
   const movingKinds = anchorOnly ? ['end'] : SNAP_TARGET_KINDS
@@ -268,8 +268,8 @@ export function computeDragSnap(min, size, crossMin, crossSize, others, threshol
   return findAxisSnap(min, size, crossMin, crossSize, others, threshold, false)
 }
 
-// Resizing: only the far edge (min + size) actually moves — the near edge is
-// anchored — so only that edge is a snap candidate.
+// Resizing: only the far edge (min + size) actually moves - the near edge is
+// anchored - so only that edge is a snap candidate.
 export function computeResizeSnap(min, size, crossMin, crossSize, others, threshold) {
   return findAxisSnap(min, size, crossMin, crossSize, others, threshold, true)
 }

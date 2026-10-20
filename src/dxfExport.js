@@ -47,7 +47,7 @@ function roomEntities(roomBox, scale, color) {
   const areaLabel = Number.isNaN(roomBox.targetArea) ? '?' : roomBox.targetArea
   const textHeight = Math.max(0.15, Math.min(Math.min(realWidth, realHeight) / 4, 0.5))
 
-  // Wrap the name to the room's own width — DXF TEXT entities don't wrap on
+  // Wrap the name to the room's own width - DXF TEXT entities don't wrap on
   // their own, so a long name previously just ran straight off the room's
   // right edge instead of dropping to a second line the way the on-canvas
   // label does.
@@ -55,7 +55,7 @@ function roomEntities(roomBox, scale, color) {
   const lineSpacing = textHeight * 1.4
 
   // DXF is Y-up, so the topmost line has the highest Y and each subsequent
-  // line steps downward — the reverse of a screen's top-to-bottom Y.
+  // line steps downward - the reverse of a screen's top-to-bottom Y.
   let y = centerY + (nameLines.length * lineSpacing) / 2
   const labels = nameLines.map((line) => {
     const entity = textEntity(centerX - halfWidth, y, textHeight, line, 'ROOMS TAGS', color)

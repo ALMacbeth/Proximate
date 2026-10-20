@@ -4,10 +4,10 @@ import { wrapText } from './textWrap.js'
 
 // Colors are baked in as literal values (the app's --accent-bg/--corridor-fill
 // etc. are CSS custom properties that won't resolve once this file is opened
-// outside the app) — taken from the light theme in index.css, since a
+// outside the app) - taken from the light theme in index.css, since a
 // standalone export shouldn't depend on the viewer's OS/browser theme.
 // Translucent colors are split into a plain hex color plus a separate
-// fill-opacity/stroke-opacity attribute rather than an rgba() paint value —
+// fill-opacity/stroke-opacity attribute rather than an rgba() paint value -
 // browsers render rgba() fine, but several vector/CAD import tools this file
 // is meant for don't reliably parse it, which can make a border (like the
 // room box's) silently disappear even though it looks correct on canvas.
@@ -57,7 +57,7 @@ function layerGroup(id, label, elements) {
 
 // Builds a self-contained SVG string of everything visible on the canvas
 // (rooms, wall outlines, corridors, junctions, connections) directly from
-// the same state/geometry helpers RoomCanvas.jsx renders from — not a
+// the same state/geometry helpers RoomCanvas.jsx renders from - not a
 // snapshot of the live DOM, which carries pan/zoom transforms, UI-only
 // elements (handles, hit-targets, selection/snap guides) and CSS variables
 // that wouldn't resolve outside the app.
@@ -102,7 +102,7 @@ export function buildSvg({ roomBoxes, corridorNodes, corridorEdges, connections,
 
   // Built as separate arrays (one per exported layer) rather than one flat
   // list, so each category can be wrapped in its own named/toggleable group
-  // — kept in the same order as the on-canvas render, so stacking looks
+  // - kept in the same order as the on-canvas render, so stacking looks
   // identical regardless of layer visibility in the viewing tool.
   const wallOutlineShapes = []
   const connectionShapes = []
@@ -173,7 +173,7 @@ export function buildSvg({ roomBoxes, corridorNodes, corridorEdges, connections,
     const dimensionFontSize = fontSize * 0.85
 
     // Wrap the name to the room's own width, same as the on-canvas label's
-    // overflow-wrap: break-word — otherwise a long name just runs past the
+    // overflow-wrap: break-word - otherwise a long name just runs past the
     // room's edges in the exported file instead of wrapping like it does
     // on screen. Margin approximates .room-card-label's 0.4em side padding.
     const maxNameWidth = Math.max(1, box.width - fontSize * 0.8)

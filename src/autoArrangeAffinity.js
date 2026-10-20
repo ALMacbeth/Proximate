@@ -1,6 +1,6 @@
 // Relative pull strength per signal tier. The user's own explicit
 // adjacentRooms data sits above all of these (it's resolved and applied
-// separately, in useAutoArrange.js — see resolveAdjacencyTargets there for
+// separately, in useAutoArrange.js - see resolveAdjacencyTargets there for
 // why it needs to be re-resolved from live positions every tick rather than
 // computed once here alongside the rest).
 const TIER_STRENGTH = {
@@ -10,11 +10,11 @@ const TIER_STRENGTH = {
 }
 
 // Canonical space-type nodes, each with the keywords/synonyms that map a
-// room name onto it. Grouped by domain for readability — office/generic,
+// room name onto it. Grouped by domain for readability - office/generic,
 // transport, residential, plus two categories added after reading real
 // project drawings (see below). Matching is substring-based against the
 // lowercased room name, but resolved by LONGEST matching keyword across all
-// nodes (see findKeywordCategory) rather than first-match-in-list-order —
+// nodes (see findKeywordCategory) rather than first-match-in-list-order -
 // otherwise a specific compound term like "refuse store" would lose to the
 // generic "store" keyword in a different node.
 const TERM_NODES = {
@@ -60,7 +60,7 @@ const TERM_NODES = {
   laundry: ['laundry room', 'utility room'],
 
   // Added after reading ~90 real project drawings (metro stations, a
-  // transport hub, and a rail depot) — see conversation history for the
+  // transport hub, and a rail depot) - see conversation history for the
   // extraction methodology and evidence (e.g. "DEPOT" recurred next to
   // "MEP" 356 times across the corpus; "PRAYER ROOM (F/M)" appeared
   // repeatedly on Gulf-region station levels).
@@ -68,12 +68,12 @@ const TERM_NODES = {
   prayer: ['prayer room', 'prayer', 'musalla'],
 }
 
-// Weighted edges between DIFFERENT nodes — positive = attract, negative =
+// Weighted edges between DIFFERENT nodes - positive = attract, negative =
 // repel. No entry between a pair = no inferred relation at all. Kept
 // deliberately small: every entry traces to a standard, textbook planning
 // convention (hygiene separation, noise control, equipment protection,
 // paid/unpaid fare-gate boundary, landside/airside separation) or was
-// directly observed recurring in the real drawings referenced above — not
+// directly observed recurring in the real drawings referenced above - not
 // a guess at requirements nobody stated.
 const TERM_RELATIONS = [
   // Attract
@@ -84,7 +84,7 @@ const TERM_RELATIONS = [
   { a: 'loading', b: 'storage', weight: 0.15 }, // goods-in adjacent to what it's stocking
   { a: 'locker', b: 'wc', weight: 0.15 }, // changing facilities paired with washrooms
   { a: 'fare_gates', b: 'unpaid_concourse', weight: 0.2 }, // gate line sits on the unpaid boundary
-  { a: 'fare_gates', b: 'paid_concourse', weight: 0.2 }, // ...and the paid boundary — the connector between both
+  { a: 'fare_gates', b: 'paid_concourse', weight: 0.2 }, // ...and the paid boundary - the connector between both
   { a: 'ticketing', b: 'unpaid_concourse', weight: 0.15 }, // ticket office reachable before the gate line
   { a: 'retail', b: 'unpaid_concourse', weight: 0.15 }, // shops sit unpaid-side
   { a: 'dining', b: 'unpaid_concourse', weight: 0.15 }, // same logic as retail
@@ -104,7 +104,7 @@ const TERM_RELATIONS = [
   { a: 'depot', b: 'plant', weight: 0.15 }, // depot buildings are consistently MEP-dense (evidence: DEPOT↔MEP, 356x)
 
   // Repel
-  { a: 'wc', b: 'kitchen', weight: -0.2 }, // hygiene separation — food/water regs convention
+  { a: 'wc', b: 'kitchen', weight: -0.2 }, // hygiene separation - food/water regs convention
   { a: 'server', b: 'wc', weight: -0.2 }, // moisture/flood risk to IT equipment
   { a: 'plant', b: 'meeting', weight: -0.15 }, // noise/vibration away from quiet spaces
   { a: 'plant', b: 'office', weight: -0.15 }, // same, general workspace
@@ -123,7 +123,7 @@ const relationsByPair = new Map(TERM_RELATIONS.map((r) => [[r.a, r.b].sort().joi
 const FUZZY_SIMILARITY_THRESHOLD = 0.5
 
 // Longest matching keyword wins across ALL nodes, not first-match-in-list
-// order — otherwise a specific compound term like "refuse store" (the
+// order - otherwise a specific compound term like "refuse store" (the
 // `refuse` node) would lose to the generic "store" keyword (the `storage`
 // node) whenever a room happened to be named something containing both.
 function findKeywordCategory(roomName) {
@@ -163,15 +163,15 @@ function jaccardSimilarity(setA, setB) {
 
 // One affinity entry per unordered room pair with a non-zero pull, picking
 // the single highest-priority signal that applies rather than summing tiers
-// — that's what keeps color/keyword/fuzzy layered as a real hierarchy
+// - that's what keeps color/keyword/fuzzy layered as a real hierarchy
 // instead of several weak guesses drowning each other out. (The
-// adjacentRooms rule — the strongest signal overall — isn't resolved here at
+// adjacentRooms rule - the strongest signal overall - isn't resolved here at
 // all; see the top-of-file note and useAutoArrange.js's
 // resolveAdjacencyTargets.)
 //
 // The keyword tier has two forms: same-node (both rooms map to the same
-// space type — a flat attraction, as before) and cross-node (the two rooms
-// map to DIFFERENT nodes that have a TERM_RELATIONS edge between them —
+// space type - a flat attraction, as before) and cross-node (the two rooms
+// map to DIFFERENT nodes that have a TERM_RELATIONS edge between them -
 // strength can be positive (attract) or negative (repel) here, unlike every
 // other tier).
 export function computeAffinities(roomBoxes) {

@@ -47,7 +47,7 @@ export function useCorridorDraw({ activeTool, getLayoutPointerPosition, onCommit
   const commitChain = () => {
     setDraftPoints((prev) => {
       // A double-click's second click already added a point almost on top
-      // of the one before it — drop that trailing duplicate rather than
+      // of the one before it - drop that trailing duplicate rather than
       // committing a near-zero-length final segment.
       let points = prev
       if (points.length >= 2) {
@@ -70,7 +70,7 @@ export function useCorridorDraw({ activeTool, getLayoutPointerPosition, onCommit
       if (event.key !== 'Escape' && event.key !== 'Enter') return
 
       // With no chain in progress, Escape/Enter have nothing to
-      // cancel/commit — treat them the same as clicking the toolbar
+      // cancel/commit - treat them the same as clicking the toolbar
       // button again and leave the tool entirely.
       if (draftPoints.length === 0) {
         onExitTool()

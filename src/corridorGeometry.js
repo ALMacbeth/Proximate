@@ -3,7 +3,7 @@ const EPSILON = 1e-6
 const AXIS_ALIGN_EPSILON_PX = 0.5
 
 // Perpendicular unit normal of the nodeA->nodeB direction, or null for a
-// degenerate (zero-length) edge — callers must skip rendering/offsetting it
+// degenerate (zero-length) edge - callers must skip rendering/offsetting it
 // rather than dividing by a near-zero length.
 function edgeNormal(nodeA, nodeB) {
   const dx = nodeB.x - nodeA.x
@@ -68,7 +68,7 @@ function projectPointOntoSegment(point, a, b) {
   return { x, y, t, distance: Math.hypot(point.x - x, point.y - y) }
 }
 
-// Strict-interior intersection of segments p1-p2 and p3-p4 — returns null
+// Strict-interior intersection of segments p1-p2 and p3-p4 - returns null
 // for parallel/collinear segments or an intersection at/beyond either
 // segment's endpoints (endpoint-touching is handled separately, as a
 // node-merge, not a crossing-split).
@@ -95,7 +95,7 @@ function nextJunctionId(prefix) {
 }
 
 // Resolves corridor topology after a discrete gesture (chain commit, node
-// drag-end, edge drag-end) — never call this per pointer-move frame, since
+// drag-end, edge drag-end) - never call this per pointer-move frame, since
 // it can rewrite the node/edge arrays and doing that every frame would
 // constantly remount SVG elements mid-drag.
 //
@@ -214,12 +214,12 @@ export function resolveCorridorTopology(nodes, edges, options = {}) {
 // axis-aligned corridor edges only (a diagonal corridor edge has no single
 // scalar position on either axis, so it simply doesn't participate).
 // Shaped exactly like the `{ min, size, crossMin, crossSize }` entries
-// geometry.js's findAxisSnap already expects from other rooms — a
+// geometry.js's findAxisSnap already expects from other rooms - a
 // zero-size entry contributes one point candidate (its `min`) without any
 // changes to that shared engine.
 // `wallOffsetPx` pushes the outer two candidates out to the corridor's wall
 // outline (matching the rendered offset outline) instead of its own bare
-// edge — the centerline candidate is unaffected, same as the room wall-snap.
+// edge - the centerline candidate is unaffected, same as the room wall-snap.
 export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, scale, wallOffsetPx = 0) {
   const xCandidates = []
   const yCandidates = []
@@ -256,7 +256,7 @@ export function computeCorridorRoomSnapCandidates(corridorNodes, corridorEdges, 
 }
 
 // Every node id in `nodeIds`, plus the endpoints of every edge in `edgeIds`
-// — the full set of corridor nodes a group move/drag needs to translate.
+// - the full set of corridor nodes a group move/drag needs to translate.
 // Shared by useCorridorDrag.js (dragging from a corridor element) and
 // useRoomDrag.js (dragging from a room, when corridor elements are also
 // selected) so both compute the same moving set the same way.
@@ -271,7 +271,7 @@ export function corridorGroupNodeIds(corridorEdges, nodeIds, edgeIds) {
   return ids
 }
 
-// Degree (incident-edge count) of every node, keyed by node id — used to
+// Degree (incident-edge count) of every node, keyed by node id - used to
 // decide whether a node needs a junction fill (degree >= 2) at all.
 export function computeNodeDegrees(edges) {
   const degrees = new Map()

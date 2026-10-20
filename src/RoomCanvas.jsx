@@ -40,7 +40,7 @@ const PDF_FILE_PATTERN = /\.pdf$/i
 const ROOM_MENU_WIDTH_PX = 230
 const ROOM_MENU_HEIGHT_PX = 220
 // Rooms are drawn in true proportion, so an area spread past this is almost
-// always a unit/typo error in one row — flag it rather than silently
+// always a unit/typo error in one row - flag it rather than silently
 // producing a canvas thousands of pixels across.
 const MAX_AREA_SPREAD_RATIO = 10000
 
@@ -193,7 +193,7 @@ function RoomCanvas({
 }) {
   const containerRef = useRef(null)
   const gestureModeRef = useRef(null)
-  // Clipboard for Ctrl+C/Ctrl+V room copy-paste — kept as a ref (not state)
+  // Clipboard for Ctrl+C/Ctrl+V room copy-paste - kept as a ref (not state)
   // since copied content doesn't need to trigger a render, only to exist
   // when a later paste reads it. pointerPositionRef tracks raw client
   // coordinates so Ctrl+V (a keyboard event with no position of its own)
@@ -224,7 +224,7 @@ function RoomCanvas({
   const [labelMode, setLabelMode] = useState('dimensions')
   const [scaleWarning, setScaleWarning] = useState('')
   // Selection lives here (not inside useRoomDrag/useCorridorDrag) so both
-  // hooks can read and clear each other's selection — that's what lets a
+  // hooks can read and clear each other's selection - that's what lets a
   // mixed room+corridor selection move together regardless of which
   // element started the drag.
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -237,7 +237,7 @@ function RoomCanvas({
   // Tracks raw pointer position for paste-at-cursor, independent of
   // everything else the canvas's own onPointerMove does. Attached in the
   // CAPTURE phase (runs before bubbling, so before any child's
-  // stopPropagation() call — e.g. a room card's own drag handler) directly
+  // stopPropagation() call - e.g. a room card's own drag handler) directly
   // via addEventListener rather than a React prop, since a synthetic bubble
   // listener on the container would miss pointer moves over a room/corridor
   // that stop propagation on their way up.
@@ -258,7 +258,7 @@ function RoomCanvas({
   })
 
   // Half the wall thickness, converted from the mm input down to the same
-  // px space room boxes live in — both the wall-outline offset (rendered
+  // px space room boxes live in - both the wall-outline offset (rendered
   // further below) and room snapping (so rooms align by their wall's outer
   // face, not their own raw boundary) use this same value.
   const wallThicknessValue = Number(wallThicknessMm)
@@ -352,7 +352,7 @@ function RoomCanvas({
 
   // What actually renders: the live physics preview while arranging, the
   // real (undo-tracked) room boxes otherwise. Only the rendering reads this
-  // — drag/resize/selection/export all keep operating on roomBoxes itself,
+  // - drag/resize/selection/export all keep operating on roomBoxes itself,
   // which auto-arrange never touches until accept() commits it.
   const displayBoxes = isArranging ? previewBoxes : roomBoxes
   const isCirclePreview = isArranging && collisionShape === 'circle'
@@ -360,7 +360,7 @@ function RoomCanvas({
   // The box a room actually renders as: its real rectangle normally, or the
   // same equal-area circle the physics is colliding against (roomBox.radius,
   // only present on previewBoxes entries) while in circle-collision preview
-  // — so what you see settling is what's actually pushing other rooms
+  // - so what you see settling is what's actually pushing other rooms
   // around, not a rectangle silently riding along a circle's motion.
   const getRenderRect = (roomBox) => {
     if (!isCirclePreview || !Number.isFinite(roomBox.radius)) {
@@ -373,7 +373,7 @@ function RoomCanvas({
   }
 
   // computeConnections' fromPoint/toPoint are the nearest pair of RECTANGLE
-  // side-midpoints — correct for the normal room-card view, but during a
+  // side-midpoints - correct for the normal room-card view, but during a
   // circle preview that anchors the line to a point that isn't on the
   // rendered circle's edge at all (the same "measuring from inside the
   // shape" mismatch the adjacency physics had). Recompute both endpoints as
@@ -488,7 +488,7 @@ function RoomCanvas({
     // A fresh file (or reset) invalidates any history from whatever was
     // loaded before it, so undo can't reach back into a different room set.
     clearHistory()
-    // A new room set makes any in-progress arrange preview meaningless —
+    // A new room set makes any in-progress arrange preview meaningless -
     // its simulation nodes reference the old rooms.
     cancelAutoArrange()
     setRoomMenu(null)
@@ -496,7 +496,7 @@ function RoomCanvas({
     const spread = describeAreaSpread(rooms, MAX_AREA_SPREAD_RATIO)
     setScaleWarning(
       spread
-        ? `Room sizes span ${Math.round(spread.ratio).toLocaleString()}:1 — "${spread.smallest.roomName}" is ${spread.smallest.targetArea} m² next to "${spread.largest.roomName}" at ${spread.largest.targetArea} m². Check for a unit or typing error; the largest rooms will be very big on screen, so zoom out to see them.`
+        ? `Room sizes span ${Math.round(spread.ratio).toLocaleString()}:1 - "${spread.smallest.roomName}" is ${spread.smallest.targetArea} m² next to "${spread.largest.roomName}" at ${spread.largest.targetArea} m². Check for a unit or typing error; the largest rooms will be very big on screen, so zoom out to see them.`
         : '',
     )
 
@@ -608,7 +608,7 @@ function RoomCanvas({
   }
 
   // Stores everything about each selected room except its id/x/y, plus each
-  // one's position RELATIVE to the group's own top-left corner — so a
+  // one's position RELATIVE to the group's own top-left corner - so a
   // multi-room copy keeps its internal arrangement intact on paste instead
   // of every room landing on exactly the same point.
   const copySelectedRooms = () => {
@@ -624,7 +624,7 @@ function RoomCanvas({
   }
 
   // Pastes at the last known pointer position rather than, say, a fixed
-  // offset from the original — pointerPositionRef is only ever set while
+  // offset from the original - pointerPositionRef is only ever set while
   // the pointer is over the canvas, so there's nowhere sensible to paste
   // until the user has actually moved the mouse over it at least once.
   const pasteCopiedRooms = () => {
@@ -827,7 +827,7 @@ function RoomCanvas({
 
   // Recomputed against the live preview while arranging, purely for visual
   // feedback (so you can see adjacency violations resolve as the physics
-  // settles) — exports and the DXF/SVG buttons still use the committed
+  // settles) - exports and the DXF/SVG buttons still use the committed
   // roomBoxes/connections above, since nothing here is real until accept().
   const displayConnections = useMemo(
     () => (isArranging ? computeConnections(previewBoxes, scale) : connections),
@@ -835,7 +835,7 @@ function RoomCanvas({
   )
 
   // computeConnections' own `violated` flag is rectDistance-based (the true
-  // rectangle-to-rectangle gap) — correct for the normal view, but wrong
+  // rectangle-to-rectangle gap) - correct for the normal view, but wrong
   // during a circle preview for the same reason the line endpoints were:
   // it's checking a boundary that isn't the one on screen. A circle's edge
   // sits further from center than the rectangle's along some directions and
@@ -1011,7 +1011,7 @@ function RoomCanvas({
       violatedIds,
       scale,
       // Wall outlines are hidden via the canvas's own "Show" toggle, not by
-      // zeroing wallThicknessMm — so mirror that toggle here rather than
+      // zeroing wallThicknessMm - so mirror that toggle here rather than
       // relying on wallOffsetPx alone, or a hidden outline would still
       // sneak into the export.
       wallOffsetPx: showWallOutlines ? wallOffsetPx : 0,
@@ -1418,7 +1418,7 @@ function RoomCanvas({
                     // While the draw-corridor tool is armed, clicking on top
                     // of an existing edge must place a new chain point there
                     // (which splices a connecting node into this edge at
-                    // commit time) rather than grab-selecting the edge — so
+                    // commit time) rather than grab-selecting the edge - so
                     // leave the event unhandled and let it bubble up to the
                     // canvas's placePoint handler instead.
                     if (isDrawingCorridor) return
@@ -1430,7 +1430,7 @@ function RoomCanvas({
                 />
               )
             })}
-            {/* Purely decorative (pointer-events: none in CSS) — the
+            {/* Purely decorative (pointer-events: none in CSS) - the
                dedicated hit-target circle rendered with every node below
                handles selection/drag uniformly regardless of degree. */}
             {corridorGeometry.junctions.map(({ id, fill }) => (
@@ -1440,7 +1440,7 @@ function RoomCanvas({
               // A larger invisible hit-target circle, rendered on top of
               // every edge/junction fill, so a click anywhere near a node
               // always grabs the node rather than whatever edge happens to
-              // sit underneath it — the visible dot itself stays small and
+              // sit underneath it - the visible dot itself stays small and
               // is purely cosmetic (pointer-events: none; revealed by the
               // group's own hover, since it can't be hovered directly).
               <g key={`node-${node.id}`} className="corridor-node-group">

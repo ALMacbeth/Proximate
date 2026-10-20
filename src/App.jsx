@@ -24,7 +24,7 @@ function parseAdjacentRooms(value) {
     return text.split(',').reduce((adjacentRooms, pair) => {
         const [name, distance] = pair.split(':')
         const trimmedName = name?.trim()
-        // A malformed pair is skipped on its own — it must not discard the
+        // A malformed pair is skipped on its own - it must not discard the
         // valid rules already parsed from the same cell.
         if (!trimmedName || distance === undefined) return adjacentRooms
 
@@ -98,7 +98,7 @@ function parseWorkbook(arrayBuffer) {
     dataRows
         .map((row, index) => {
             // No column at all, or a blank cell, both mean "just the one
-            // room" — only an explicit, parseable value changes the count.
+            // room" - only an explicit, parseable value changes the count.
             const countValue = countIndex === -1 ? undefined : row[countIndex]
             const parsedCount = countValue === '' || countValue === undefined ? 1 : parseFloat(countValue)
             const count = Number.isFinite(parsedCount) ? Math.round(parsedCount) : 1
@@ -106,10 +106,10 @@ function parseWorkbook(arrayBuffer) {
         })
         .filter(({ row }) => row[roomNameIndex] !== '' && row[roomNameIndex] !== undefined)
         // A missing/blank cell parses to NaN; a zero or negative area isn't
-        // a real room either — both would otherwise import as a degenerate,
+        // a real room either - both would otherwise import as a degenerate,
         // effectively invisible box, so skip the row entirely.
         .filter(({ targetArea }) => Number.isFinite(targetArea) && targetArea > 0)
-        // A Count of 0 (or negative) means the row is excluded outright —
+        // A Count of 0 (or negative) means the row is excluded outright -
         // distinct from a missing/blank value, which defaults to 1 above.
         .filter(({ count }) => count > 0)
         .forEach(({ row, excelRowNumber, targetArea, count }) => {
@@ -120,14 +120,14 @@ function parseWorkbook(arrayBuffer) {
             const color = sanitizeColor(extractFillColor(roomNameCell))
 
             if (count > MAX_COUNT_PER_ROW) {
-                throw new Error(`Row ${excelRowNumber} has a Count of ${count} — the maximum per row is ${MAX_COUNT_PER_ROW}.`)
+                throw new Error(`Row ${excelRowNumber} has a Count of ${count} - the maximum per row is ${MAX_COUNT_PER_ROW}.`)
             }
             if (nextId + count > MAX_ROOMS) {
                 throw new Error(`That spreadsheet would create more than ${MAX_ROOMS} rooms, which is the maximum supported.`)
             }
 
             // Each instance is its own independent room sharing the same
-            // name/area/adjacency/color — the app already treats repeated
+            // name/area/adjacency/color - the app already treats repeated
             // room names as distinct instances everywhere else (auto-arrange
             // adjacency resolution, connection lines, keyword grouping all
             // resolve by name), so this is exactly the data shape they
@@ -256,7 +256,7 @@ function App() {
                 <h1 >PROXIMATE</h1>
                 {fileName && !error && (
                     <p className="filename">
-                        Loaded {fileName} — {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
+                        Loaded {fileName} - {roomIds.length} room{roomIds.length === 1 ? '' : 's'} -&gt;
                         <button
                             onClick={() => setDropToggle(true)}>Upload a new file
                         </button>
@@ -277,7 +277,7 @@ function App() {
                         </br>If any rooms have proximity requirements, list the nearby rooms in with the format <code style={{ fontSize: "14px" }}>{"Other Room Name : Max Distance"}</code><br>
                         </br>(For multiple adjacency rules, list in the same cell seperated by a <code style={{ fontSize: "14px" }}>{","}</code>)<br>
                         </br>If needed, you can add a <code style={{ fontSize: "14px" }}>{MIN_WIDTH_HEADER}</code> column to set a minimum room dimension.<br>
-                        </br>You can also add a <code style={{ fontSize: "14px" }}>{COUNT_HEADER}</code> column to import multiple instances of the same row at once — leave it blank for a single room, or use <code style={{ fontSize: "14px" }}>{"0"}</code> to skip that row entirely.<br>
+                        </br>You can also add a <code style={{ fontSize: "14px" }}>{COUNT_HEADER}</code> column to import multiple instances of the same row at once - leave it blank for a single room, or use <code style={{ fontSize: "14px" }}>{"0"}</code> to skip that row entirely.<br>
                         </br><br>
                         </br>Imported rooms will be displayed below as boxes which can be arranged by clicking and dragging.<br>
                         </br>These shapes can be adjusted in width and height while maintaining the target room area by clicking and dragging the handle in the bottom right corner.<br>
@@ -308,7 +308,7 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') handleBrowseClick()
                     }}
                 >
-                    <p>Drag &amp; drop an Excel file (or a previously exported layout file) here, or click to browse — a PDF can also be dropped to use as a background underlay</p>
+                    <p>Drag &amp; drop an Excel file (or a previously exported layout file) here, or click to browse - a PDF can also be dropped to use as a background underlay</p>
                     <input
                         ref={fileInputRef}
                         type="file"

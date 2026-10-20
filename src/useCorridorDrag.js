@@ -3,17 +3,17 @@ import { resolveCorridorTopology, constrainToAxis, corridorGroupNodeIds } from '
 
 // Dragging a corridor node or an edge's body. Because every edge just
 // references node ids, moving a node's x/y is all that's needed for every
-// edge attached to it (not only the one grabbed) to follow — "propagating"
+// edge attached to it (not only the one grabbed) to follow - "propagating"
 // a shared-endpoint move to the rest of the network falls out of the data
 // model for free, with no extra bookkeeping here.
 //
 // Selection is tracked as two Sets (nodes/edges), owned by the caller (not
-// this hook) so useRoomDrag.js can read/clear them too — that's what lets a
+// this hook) so useRoomDrag.js can read/clear them too - that's what lets a
 // mixed room+corridor selection move together regardless of which element
 // started the drag. Clicking an element already part of a multi-selection
 // (rooms included) keeps the whole group selected and drags all of it
 // together; clicking anything else selects just that one element and starts
-// a single-element drag — the same distinction useRoomDrag.js makes for
+// a single-element drag - the same distinction useRoomDrag.js makes for
 // rooms.
 export function useCorridorDrag({
   corridorNodes,
@@ -64,14 +64,14 @@ export function useCorridorDrag({
       startPositions,
       roomStartPositions,
       // Axis-constrain only applies to a lone node with no rooms riding
-      // along — a mixed group drag has no single "anchor" to constrain to.
+      // along - a mixed group drag has no single "anchor" to constrain to.
       anchorNode: movingNodeIds.length === 1 && movingRoomIds.length === 0 ? findSingleNeighborAnchor(movingNodeIds[0]) : null,
     }
   }
 
   // For Shift axis-constrain while dragging a single node: anchor on the
   // nearest neighbor when the node has more than one incident edge (a
-  // deterministic but arbitrary tie-break — a single new position can't
+  // deterministic but arbitrary tie-break - a single new position can't
   // axis-align to every neighbor at once).
   const findSingleNeighborAnchor = (nodeId) => {
     const node = corridorNodes.find((n) => n.id === nodeId)

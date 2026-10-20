@@ -9,7 +9,7 @@ export function sanitizeColor(value) {
   return typeof value === 'string' && HEX_COLOR_PATTERN.test(value) ? value : undefined
 }
 
-// Keeps only entries with a finite, non-negative distance — a NaN or negative
+// Keeps only entries with a finite, non-negative distance - a NaN or negative
 // max distance would otherwise flow into the connection/violation maths.
 export function sanitizeAdjacentRooms(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -50,7 +50,7 @@ function normalizeRoom(room) {
 // usable remains or the file is implausibly large.
 export function normalizeRoomsArray(roomsArray) {
   if (roomsArray.length > MAX_ROOMS) {
-    throw new Error(`That layout has ${roomsArray.length} rooms — the maximum supported is ${MAX_ROOMS}.`)
+    throw new Error(`That layout has ${roomsArray.length} rooms - the maximum supported is ${MAX_ROOMS}.`)
   }
 
   const rooms = {}

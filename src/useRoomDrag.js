@@ -11,7 +11,7 @@ const SNAP_THRESHOLD_PX = 8
 // amount regardless of which room in the group was actually grabbed.
 //
 // When corridor nodes/edges are selected alongside rooms, dragging a room
-// moves them too (see corridorStartPositions below) — the mirror image of
+// moves them too (see corridorStartPositions below) - the mirror image of
 // what useCorridorDrag.js does when a corridor element starts the drag.
 export function useRoomDrag({
   roomBoxes,
@@ -102,7 +102,7 @@ export function useRoomDrag({
     const guides = []
 
     // Snapping is checked against the primary (clicked) room only, and the
-    // resulting adjustment applied to the whole group — snapping every
+    // resulting adjustment applied to the whole group - snapping every
     // selected room independently would fight itself when several move
     // together.
     const primaryStart = state.startPositions.get(state.primaryId)
@@ -183,7 +183,7 @@ export function useRoomDrag({
     dragState.current = null
     setSnapGuides([])
 
-    // Corridor nodes just moved along with the room group — resolve the
+    // Corridor nodes just moved along with the room group - resolve the
     // network the same way useCorridorDrag.js does at the end of its own
     // drag, so a node dragged into a merge/crossing still gets one.
     if (state?.corridorStartPositions.size > 0) {

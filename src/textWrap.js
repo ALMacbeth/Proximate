@@ -1,4 +1,4 @@
-// Rough average character width as a fraction of text height — good enough
+// Rough average character width as a fraction of text height - good enough
 // to keep long room names from overflowing their box in exported files
 // (DXF/SVG have no native word-wrap, unlike the on-canvas CSS label, which
 // gets it for free from overflow-wrap: break-word), without needing real

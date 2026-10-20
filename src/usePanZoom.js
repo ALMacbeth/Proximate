@@ -8,8 +8,8 @@ const MAX_ZOOM = 3
 const ZOOM_SPEED = 0.001
 
 // Wheel-to-zoom (anchored at the pointer) and click-drag-to-pan for the room
-// canvas. `containerRef` must point to the outer, unscaled canvas element —
-// not the transformed content layer — since pan/zoom math measures pointer
+// canvas. `containerRef` must point to the outer, unscaled canvas element -
+// not the transformed content layer - since pan/zoom math measures pointer
 // position against that element's own (never-scaled) bounding box.
 export function usePanZoom(containerRef) {
   const panState = useRef(null)
@@ -33,7 +33,7 @@ export function usePanZoom(containerRef) {
       const pointerY = event.clientY - containerRect.top
 
       setView((prev) => {
-        // Multiplicative, not additive — a fixed step (prev.zoom -
+        // Multiplicative, not additive - a fixed step (prev.zoom -
         // deltaY * ZOOM_SPEED) is a huge fraction of the range near
         // MIN_ZOOM (0.02) and barely perceptible near MAX_ZOOM (3), so one
         // scroll notch felt like it teleported straight to the floor while
@@ -60,8 +60,8 @@ export function usePanZoom(containerRef) {
   }, [containerRef])
 
   // Converts a pointer event's screen position into the canvas's own
-  // unscaled, unpanned coordinate space — the space room box x/y values live
-  // in — by undoing the current pan translate and zoom scale.
+  // unscaled, unpanned coordinate space - the space room box x/y values live
+  // in - by undoing the current pan translate and zoom scale.
   const getLayoutPointerPosition = (event) => {
     const containerRect = containerRef.current.getBoundingClientRect()
     return {

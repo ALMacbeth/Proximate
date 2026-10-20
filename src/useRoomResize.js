@@ -33,11 +33,11 @@ export function useRoomResize({ roomBoxes, setRoomBoxes, scale, zoom, recordHist
     const minWidthPx = Number.isFinite(state.minWidth) && state.minWidth > 0 ? state.minWidth * scale : 0
     const desiredWidth = state.startWidth + (event.clientX - state.startX) / zoom
 
-    // The room's left edge (state.x) is anchored during resize — only the
-    // right edge (x + width) moves — so snapping only checks that edge
+    // The room's left edge (state.x) is anchored during resize - only the
+    // right edge (x + width) moves - so snapping only checks that edge
     // against other rooms' edges/centers, unlike drag which snaps a whole box.
     // Candidates use the offset wall outline rather than the raw box, same
-    // reasoning as useRoomDrag.js — the moving edge is the wall's outer
+    // reasoning as useRoomDrag.js - the moving edge is the wall's outer
     // face, not the room's own boundary.
     const others = roomBoxes
       .filter((box) => box.id !== id)

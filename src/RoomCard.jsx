@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { formatArea, formatDimensions, getContrastTextColor } from './geometry.js'
 
 // Both components take only primitives plus identity-stable callbacks, so
-// React.memo can skip every room whose own props didn't change — a pan, zoom,
+// React.memo can skip every room whose own props didn't change - a pan, zoom,
 // selection or single-room drag then re-renders only the rooms it touched
 // instead of every card and label on the canvas. Callbacks receive the
 // room's id as their last argument rather than closing over a room object,

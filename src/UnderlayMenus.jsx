@@ -3,7 +3,7 @@ import { useState } from 'react'
 // Shown once a dropped PDF's first page has been rendered, asking for the
 // drawing scale it was plotted at (e.g. 500 for a 1:500 drawing) so the
 // underlay can be sized in the same meters-to-px space as rooms and
-// corridors (mirrors CorridorWidthPrompt's popover pattern) — the real-world
+// corridors (mirrors CorridorWidthPrompt's popover pattern) - the real-world
 // size is the page's own printed size times this ratio, computed by the
 // caller from the PDF's actual page dimensions.
 export function UnderlayScalePrompt({ onApply, onCancel }) {
@@ -28,7 +28,7 @@ export function UnderlayScalePrompt({ onApply, onCancel }) {
         onSubmit={applyScale}
         style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg)', padding: 8, borderRadius: 8, boxShadow: 'var(--shadow)' }}
       >
-        <p fontSize="12px">Drawing scale — enter 500 for a 1:500 drawing:</p>
+        <p fontSize="12px">Drawing scale - enter 500 for a 1:500 drawing:</p>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           1 :
           <input
